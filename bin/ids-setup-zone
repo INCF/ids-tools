@@ -1,0 +1,83 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import os
+import sys
+import optparse
+import readline
+import getpass
+import subprocess
+
+if __name__ == '__main__':
+
+    parser = optparse.OptionParser()
+    parser.add_option('--zonename', dest='irods_zone',
+                      help="name of the new zone")
+    parser.add_option('--icathost', dest='icat_host',
+                      help="name of the ICAT host")
+    parser.add_option('--irodsuser', '--user', dest='irods_user',
+                      help="username of the iRODS administrative user")
+    parser.add_option('--irodspassword', '--pass', dest='irods_pass',
+                      help="password for the iRODS administrative user")
+    parser.add_option('--dbname', dest='db_name', default='icat',
+                      help="name of the ICAT database (default is 'icat')")
+    parser.add_option('--dbhost', dest='db_host', default='localhost',
+                      help="ICAT database host (default is 'localhost')")
+    parser.add_option('--dbuser', dest='db_user',
+                      help="username to connect to the database instance (default is the same as irodsuser)")
+    parser.add_option('--dbpass', dest='db_pass',
+                      help="password to connect to the database instance (default is the same as irodspass)")
+    parser.add_option('--fabfile', dest='fabfile',
+                      help="location of the fabfile to use for setup tasks")
+    parser.add_option('--templates', dest='templates',
+                      help="location of configuration file templates for setup tasks")
+    options, args = parser.parse_args()
+
+    while not options.irods_zone:
+        options.irods_zone = raw_input('Enter the name of the new iRODS zone: ')
+        if not options.irods_zone:
+            print('You must provide an iRODS zone name. There is no default.')
+
+    if not options.irods_user:
+        options.irods_user = raw_input('Enter the user name for the iRODS administrative user [irods]: ')
+        if not options.irods_user:
+            options.irods_user = 'irods'
+
+    while not options.irods_pass:
+        options.irods_pass = getpass.getpass('Enter the password for the iRODS administrative user: ')
+        if not options.irods_pass:
+            print('You cannot use an empty password.')
+
+    # if database options aren't set, use reasonable defaults
+    if not options.db_name: options.db_name = 'icat'
+    if not options.db_host: options.db_host = 'localhost'
+    if not options.db_user: options.db_user = options.irods_user
+    if not options.db_pass: options.db_pass = options.irods_pass
+
+    # find the fab files
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if not options.fabfile:
+        options.fabfile = os.path.abspath(os.path.join(script_dir, '../fabfile'))
+    if not options.templates:
+        options.templates = os.path.abspath(os.path.join(script_dir, '../templates'))
+
+    env_var_list = []
+    env_var_list.append('irods_zone=%s' % (options.irods_zone,))
+    env_var_list.append('icat_host=%s' % (options.icat_host,))
+    env_var_list.append('irods_user=%s' % (options.irods_user,))
+    env_var_list.append('irods_pass=%s' % (options.irods_pass,))
+    env_var_list.append('db_name=%s' % (options.db_name,))
+    env_var_list.append('db_host=%s' % (options.db_host,))
+    env_var_list.append('db_user=%s' % (options.db_user,))
+    env_var_list.append('db_pass=%s' % (options.db_pass,))
+    env_var_list.append('templates=%s' % (options.templates,))
+
+    fab_cmd = ['fab', '-f', options.fabfile, '-H', 'root@localhost',
+               '--set', ','.join(env_var_list)]
+    fab_cmd.append('zone.setup')
+    
+    ret_code = subprocess.call(fab_cmd)
+    
+    sys.exit(0)
+    
+

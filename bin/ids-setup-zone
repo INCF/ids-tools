@@ -6,15 +6,16 @@ import sys
 import optparse
 import readline
 import getpass
+import socket
 import subprocess
 
 if __name__ == '__main__':
 
     parser = optparse.OptionParser()
-    parser.add_option('--zonename', dest='irods_zone',
+    parser.add_option('--irodszone', '--zonename', dest='irods_zone',
                       help="name of the new zone")
     parser.add_option('--icathost', dest='icat_host',
-                      help="name of the ICAT host")
+                      help="FQDN of the new ICAT host (default is this host)")
     parser.add_option('--irodsuser', '--user', dest='irods_user',
                       help="username of the iRODS administrative user")
     parser.add_option('--irodspassword', '--pass', dest='irods_pass',
@@ -31,28 +32,61 @@ if __name__ == '__main__':
                       help="location of the fabfile to use for setup tasks")
     parser.add_option('--templates', dest='templates',
                       help="location of configuration file templates for setup tasks")
+    parser.add_option('--no-prompt', action='store_false', dest="prompt", default=True,
+                      help="don't prompt for parameter values not provided via command-line options")
     options, args = parser.parse_args()
 
+
+    # if prompting is turned off, exit if required options (i.e. those without
+    # a reasonable default) are not provided
+    if not options.prompt:
+        if (not options.irods_zone or not options.icat_host
+            or not options.irods_user or not options.irods_pass):
+            print('You must provide values for zone, and for iRODS admin username and password')
+            sys.exit(1)
+
+
+    # check provided options, and prompt for those that are missing (and don't have defaults)
     while not options.irods_zone:
         options.irods_zone = raw_input('Enter the name of the new iRODS zone: ')
         if not options.irods_zone:
             print('You must provide an iRODS zone name. There is no default.')
 
-    if not options.irods_user:
-        options.irods_user = raw_input('Enter the user name for the iRODS administrative user [irods]: ')
+    while not options.icat_host:
+        options.icat_host = raw_input('Enter the name of the ICAT server for zone %s: '
+                                      % (options.irods_zone,))
+        if not options.icat_host:
+            print('You must provide the ICAT server name. There is no default.')
+
+    while not options.irods_user:
+        options.irods_user = raw_input('Enter the user name for the iRODS administrative user: ')
         if not options.irods_user:
-            options.irods_user = 'irods'
+            print('You must provide the iRODS admin user name. There is no default.')
 
     while not options.irods_pass:
-        options.irods_pass = getpass.getpass('Enter the password for the iRODS administrative user: ')
-        if not options.irods_pass:
+        tmp_pass1 = getpass.getpass('Enter the password for the iRODS administrative user: ')
+        if not tmp_pass1:
             print('You cannot use an empty password.')
+        tmp_pass2 = getpass.getpass('Enter the password again for verification           : ')
+        if tmp_pass1 != tmp_pass2:
+            print("Passwords don't match. Try again.")
+        else:
+            options.irods_pass = tmp_pass1
+
 
     # if database options aren't set, use reasonable defaults
     if not options.db_name: options.db_name = 'icat'
     if not options.db_host: options.db_host = 'localhost'
     if not options.db_user: options.db_user = options.irods_user
     if not options.db_pass: options.db_pass = options.irods_pass
+
+
+    # canonicalize provided hostnames
+    if options.icat_host == 'localhost':
+        options.icat_host = socket.getfqdn()
+    else:
+        options.icat_host = socket.getfqdn(options.icat_host)
+
 
     # find the fab files
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +95,8 @@ if __name__ == '__main__':
     if not options.templates:
         options.templates = os.path.abspath(os.path.join(script_dir, '../templates'))
 
+
+    # set up the fab command-line and run it
     env_var_list = []
     env_var_list.append('irods_zone=%s' % (options.irods_zone,))
     env_var_list.append('icat_host=%s' % (options.icat_host,))
@@ -72,12 +108,13 @@ if __name__ == '__main__':
     env_var_list.append('db_pass=%s' % (options.db_pass,))
     env_var_list.append('templates=%s' % (options.templates,))
 
-    fab_cmd = ['fab', '-f', options.fabfile, '-H', 'root@localhost',
+    fab_cmd = ['fab', '-f', options.fabfile,
+               '-H', 'root@%s' % (options.icat_host,),
                '--set', ','.join(env_var_list)]
-    fab_cmd.append('zone.setup')
+    fab_cmd.append('setup.setup_zone')
     
     ret_code = subprocess.call(fab_cmd)
     
-    sys.exit(0)
+    sys.exit(ret_code)
     
 

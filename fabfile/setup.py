@@ -18,26 +18,36 @@ irods_default_zone = 'tempZone'
 irods_schema_dir = '/usr/lib/irods/schema'
 
 
-@task(default=True)
+@task
 def setup_zone():
-    execute(create_tmpdir)
-    execute(install_packages)
+    execute(install_packages, is_icat=True)
     execute(create_icat_db)
     execute(create_icat_schema)
-    execute(configure_irods)
+    execute(configure_irods, is_icat=True)
     execute(start_irods)
     execute(setup_icat)
+    execute(setup_root_irodsenv)
     execute(clean_tmpdir)
 
 
 @task
-def install_packages():
+def setup_ds():
+    execute(install_packages)
+    execute(configure_irods)
+    execute(start_irods)
+    execute(setup_root_irodsenv)
+    execute(clean_tmpdir)
+    
+
+@task
+def install_packages(is_icat=False):
     # set up the apt repo for irods packages
     put(os.path.join(env.templates, apt_sources), '/etc/apt/sources.list.d', use_sudo=True)
     sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
     sudo('apt-get update')
     # install required packages
-    sudo('apt-get -y install postgresql odbc-postgresql')
+    if is_icat:
+        sudo('apt-get -y install postgresql odbc-postgresql')
     sudo('apt-get -y install irods-server')
 
 
@@ -86,19 +96,20 @@ def create_icat_schema():
      
 
 @task
-def configure_irods():
-    execute(create_tmpdir)
+def configure_irods(is_icat=False):
 
-    # generate a scramble key for the DB password,
-    # and scramble the DB password (for the server.config)
-    env.db_key = ''.join(random.choice(string.ascii_lowercase+string.ascii_uppercase+string.digits)
-                         for x in range(6))
-    env.db_spass = run("iadmin spass %s %s | sed -e 's/Scrambled form is://'"
-                       % (env.db_pass, env.db_key))
-
-    # upload configuration files
-    upload_template(os.path.join(env.templates, 'server.config.tmpl'),
-                    '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
+    if is_icat:
+        # generate a scramble key for the DB password,
+        # and scramble the DB password (for the server.config)
+        env.db_key = ''.join(random.choice(string.ascii_lowercase+string.ascii_uppercase+string.digits)
+                             for x in range(6))
+        env.db_spass = run("iadmin spass %s %s | sed -e 's/Scrambled form is://'"
+                           % (env.db_pass, env.db_key))
+        upload_template(os.path.join(env.templates, 'icat.config.tmpl'),
+                        '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
+    else:
+        upload_template(os.path.join(env.templates, 'server.config.tmpl'),
+                        '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
     sudo('chown rods:rods /etc/irods/server.config*')
 
     upload_template(os.path.join(env.templates, 'server.env.tmpl'),
@@ -143,12 +154,15 @@ def setup_icat():
         run('ichmod read public /%s' % (env.irods_zone, ))
         run('iadmin moduser rodsBoot password %s' % (env.irods_pass,))
 
+
+@task
+def setup_root_irodsenv():
     # set up the root user to be able to act as the iRODS admin user
     sudo('mkdir -p /root/.irods')
     upload_template(os.path.join(env.templates, 'irodsEnv.tmpl'),
                     '/root/.irods/.irodsEnv', context=env, use_sudo=True)
     sudo('iinit %s' % (env.irods_pass,))
-    
+
 
 @task
 def create_tmpdir():

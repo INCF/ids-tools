@@ -1,0 +1,73 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import os
+import sys
+import optparse
+import socket
+import subprocess
+
+if __name__ == '__main__':
+
+    parser = optparse.OptionParser()
+    parser.add_option('--irodshost', dest='irods_host',
+                      help="host which will host the new storage resource")
+    parser.add_option('--storagepath', '--vaultpath', dest='vault_path',
+                      help="path (relative to data server) where iRODS files should be stored")
+    parser.add_option('--resourcename', dest='resc_name',
+                      help="name for the storage resource in the zone")
+    parser.add_option('--fabfile', dest='fabfile',
+                      help="location of the fabfile to use for setup tasks")
+    parser.add_option('--add', action='store_true', default=False,
+                      help="add a new resource from iRODS host")
+    parser.add_option('--remove', action='store_true', default=False,
+                      help="remove a resource from iRODS")
+    options, args = parser.parse_args()
+
+
+    if ((not options.add and not options.remove)
+        or (options.add and options.remove)):
+        print('Must specify one of --add or --remove.')
+        sys.exit(1)
+
+    env_var_list = []
+
+    if not options.irods_host:
+        print('%s requires the --irodshost option.' % (sys.argv[0],))
+        sys.exit(1)
+    else:
+        if options.irods_host == 'localhost': options.irods_host = ''
+        options.irods_host = socket.getfqdn(options.irods_host)
+        
+    if options.remove:
+        if not options.resc_name:
+            print('Remove operation requires --resourcename option.')
+            sys.exit(1)
+        env_var_list.append('resc_name=%s' % (options.resc_name,))
+        fab_task = 'manage.remove_resource'
+
+    elif options.add:
+        if not options.vault_path or not options.resc_name:
+            print('Add requires both --storagepath and --resourcename must be provided.')
+            sys.exit(1)
+        env_var_list.append('irods_host=%s' % (options.irods_host,))
+        env_var_list.append('vault_path=%s' % (options.vault_path,))
+        env_var_list.append('resc_name=%s' % (options.resc_name,))
+        fab_task = 'manage.add_resource'
+
+        
+    # find the fab files
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if not options.fabfile:
+        options.fabfile = os.path.abspath(os.path.join(script_dir, '../fabfile'))
+
+
+    # set up the fab command-line and run it
+    fab_cmd = ['fab', '-f', options.fabfile,
+               '-H', 'root@%s' % (options.irods_host,),
+               '--set', ','.join(env_var_list),
+               fab_task]
+    
+    sys.exit(subprocess.call(fab_cmd))
+    
+

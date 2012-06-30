@@ -33,4 +33,15 @@ def remove_resource():
     # run iadmin to remove the resource
     # iadmin will throw an error if there are issues
     sudo('iadmin rmresc %s' % (env.resc_name,))
+
+
+@task
+def ping_server():
+    # just used to see if we can connect properly with fab
+    # and shows under what user ids we're being run
+    run('lsb_release -a')
+    run('uname -a')
+    run('id -a')
+    sudo('id -a')
+
         

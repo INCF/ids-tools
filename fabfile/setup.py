@@ -1,9 +1,10 @@
 import os
 import string
 import random
+import re
 
 from fabric.api import *
-from fabric.contrib.files import upload_template, sed
+from fabric.contrib.files import upload_template, sed, uncomment
 
 
 # where to download the irods packages from
@@ -27,7 +28,7 @@ def setup_zone():
     execute(start_irods)
     execute(setup_icat)
     execute(setup_root_irodsenv)
-    execute(clean_tmpdir)
+    #execute(clean_tmpdir)
 
 
 @task
@@ -45,26 +46,57 @@ def install_packages(is_icat=False):
     put(os.path.join(env.templates, apt_sources), '/etc/apt/sources.list.d', use_sudo=True)
     sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
     sudo('apt-get update')
+
     # install required packages
     if is_icat:
-        sudo('apt-get -y install postgresql odbc-postgresql')
-    sudo('apt-get -y install irods-server')
+        sudo('apt-get -y install postgresql odbc-postgresql cpp')
+    sudo('apt-get -y install irods-server ssl-cert')
 
 
 @task
 def create_icat_db():
     execute(create_tmpdir)
+
+    # if the postgres version is 9.1 or above, need
+    # to update some of the configuration
+    pg_version = sudo("dpkg-query -W -f '${Version}' postgresql")
+    m = re.match(r'^(\d+)\.(\d+)(.*)$', pg_version)
+    if m:
+        major = int(m.group(1))
+        minor = int(m.group(2))
+        if major >= 9 and minor >= 1:
+            # need to update config
+            pg_config = '/etc/postgresql/%d.%d/main/postgresql.conf' % (major, minor)
+            uncomment(pg_config,
+                      'standard_conforming_strings = on',
+                      use_sudo=True)
+            sed(pg_config,
+                'standard_conforming_strings = on',
+                'standard_conforming_strings = off',
+                use_sudo=True)
     
     # install Postgres's ODBC driver in the system /etc/odbcinst.ini
     # sed part makes sure connection logging is turned off
-    sudo("cat %s | sed -e 's/^CommLog.*/CommLog\t= 0/' | odbcinst -i -d -r" % (odbc_driver_file,))
+    sudo("cat %s | sed -e 's/^CommLog.*/CommLog\t= 0/' | odbcinst -i -d -r"
+         % (odbc_driver_file,))
 
     # set up the ICAT database and user
     sudo('createuser -e -SDRl %s' % (env.db_user,), 
          user='postgres')
-    sudo('psql -c "ALTER ROLE %s ENCRYPTED PASSWORD \'%s\'"' % (env.db_user, env.db_pass), 
+    sudo('psql -c "ALTER ROLE %s ENCRYPTED PASSWORD \'%s\'"'
+         % (env.db_user, env.db_pass), 
          user='postgres')
-    sudo('createdb -e -O %s %s' % (env.db_user, env.db_name),
+
+    # if given, set up a tablespace for the ICAT DB, and set the db_user to own it
+    if env.icat_tablespace:
+        sudo('chown postgres:postgres %s' % (env.icat_tablespace,))
+        sudo('psql -c "CREATE TABLESPACE %s OWNER %s LOCATION %s"'
+             % (os.path.basename(env.icat_tablespace), env.db_user, env.icat_tablespace),
+             user='postgres')
+        
+    # use template0 so we can specify C collation for irods
+    sudo('createdb --lc-collate=C -T template0 -e -O %s %s'
+         % (env.db_user, env.db_name),
          user='postgres')
 
     # set up the ODBC DSN
@@ -79,8 +111,10 @@ def create_icat_schema():
     execute(create_tmpdir)
 
     # prep schema files
-    run('cp %s %s' % (os.path.join(irods_schema_dir, '*'), env.tmpdir))
-    run('perl %s postgres %s' % (os.path.join(env.tmpdir, 'convertSql.pl'), env.tmpdir))
+    run('cp %s %s'
+        % (os.path.join(irods_schema_dir, '*'), env.tmpdir))
+    run('perl %s postgres %s'
+        % (os.path.join(env.tmpdir, 'convertSql.pl'), env.tmpdir))
     sed(os.path.join(env.tmpdir, 'icatSysInserts.sql'),
         irods_default_zone, env.irods_zone)
 
@@ -124,7 +158,12 @@ def configure_irods(is_icat=False):
 
 @task
 def start_irods():
-    sudo('/usr/bin/irods start', user='rods')
+    # make sure it's set to start at boot
+    sed('/etc/default/irods',
+        'START_IRODS=no',
+        'START_IRODS=yes',
+        use_sudo=True)
+    sudo('service irods start')
 
     
 @task
@@ -144,7 +183,7 @@ def setup_icat():
         run('imkdir /%s/trash/home' % (env.irods_zone,))
         run('iadmin mkgroup public')
         run('iadmin mkuser %s rodsadmin' % (env.irods_user,))
-        run('iadmin moduser irods password %s' % (env.irods_pass,))
+        run('iadmin moduser %s password %s' % (env.irods_user, env.irods_pass))
         run('ichmod own %s /' % (env.irods_user,))
         run('ichmod own %s /%s' % (env.irods_user, env.irods_zone))
         run('ichmod own %s /%s/home' % (env.irods_user, env.irods_zone))
@@ -175,4 +214,6 @@ def clean_tmpdir():
     if 'tmpdir' in env and env.tmpdir:
         run('rm -rf %s' % (env.tmpdir,))
         del env['tmpdir']
+
+pg_config = '/tmp/postgresql/9.1/main/postgresql.conf'
 

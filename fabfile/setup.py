@@ -3,8 +3,10 @@ import string
 import random
 import re
 
+import manage
+
 from fabric.api import *
-from fabric.contrib.files import upload_template, sed, uncomment
+from fabric.contrib.files import upload_template, sed, uncomment, exists
 
 
 # where to download the irods packages from
@@ -21,6 +23,7 @@ irods_schema_dir = '/usr/lib/irods/schema'
 
 @task
 def setup_zone():
+    execute(manage.get_server_info)
     execute(install_packages, is_icat=True)
     execute(create_icat_db)
     execute(create_icat_schema)
@@ -28,7 +31,7 @@ def setup_zone():
     execute(start_irods)
     execute(setup_icat)
     execute(setup_root_irodsenv)
-    #execute(clean_tmpdir)
+    execute(clean_tmpdir)
 
 
 @task
@@ -43,14 +46,15 @@ def setup_ds():
 @task
 def install_packages(is_icat=False):
     # set up the apt repo for irods packages
-    put(os.path.join(env.templates, apt_sources), '/etc/apt/sources.list.d', use_sudo=True)
+    put(os.path.join(env.templates, '%s.%s' % (apt_sources, env.codename)),
+        '/etc/apt/sources.list.d/incf.list', use_sudo=True)
     sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
-    sudo('apt-get update')
+    sudo('apt-get -qq update')
 
     # install required packages
     if is_icat:
-        sudo('apt-get -y install postgresql odbc-postgresql cpp')
-    sudo('apt-get -y install irods-server ssl-cert')
+        sudo('apt-get -q -y install postgresql odbc-postgresql cpp')
+    sudo('apt-get -q -y install irods-server ssl-cert')
 
 
 @task
@@ -74,9 +78,11 @@ def create_icat_db():
                 'standard_conforming_strings = on',
                 'standard_conforming_strings = off',
                 use_sudo=True)
+            sudo('service postgresql restart')
     
     # install Postgres's ODBC driver in the system /etc/odbcinst.ini
     # sed part makes sure connection logging is turned off
+    sudo('rm -f /etc/odbcinst.ini')
     sudo("cat %s | sed -e 's/^CommLog.*/CommLog\t= 0/' | odbcinst -i -d -r"
          % (odbc_driver_file,))
 
@@ -88,11 +94,15 @@ def create_icat_db():
          user='postgres')
 
     # if given, set up a tablespace for the ICAT DB, and set the db_user to own it
-    if env.icat_tablespace:
+    if env.icat_tablespace and exists(env.icat_tablespace):
+        tname = os.path.basename(env.icat_tablespace)
         sudo('chown postgres:postgres %s' % (env.icat_tablespace,))
-        sudo('psql -c "CREATE TABLESPACE %s OWNER %s LOCATION %s"'
-             % (os.path.basename(env.icat_tablespace), env.db_user, env.icat_tablespace),
+        sudo('psql -c "CREATE TABLESPACE %s OWNER %s LOCATION \'%s\'"'
+             % (tname, env.db_user, env.icat_tablespace),
              user='postgres')
+        sudo('psql -c "ALTER USER %s SET default_tablespace = \'%s\'"'
+             % (env.db_user, tname),
+            user='postgres')
         
     # use template0 so we can specify C collation for irods
     sudo('createdb --lc-collate=C -T template0 -e -O %s %s'
@@ -144,16 +154,16 @@ def configure_irods(is_icat=False):
     else:
         upload_template(os.path.join(env.templates, 'server.config.tmpl'),
                         '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
-    sudo('chown rods:rods /etc/irods/server.config*')
+    sudo('chown irods:irods /etc/irods/server.config*')
 
     upload_template(os.path.join(env.templates, 'server.env.tmpl'),
                     '/etc/irods/server.env', context=env, use_sudo=True, mode=0644)
-    sudo('chown rods:rods /etc/irods/server.env*')
+    sudo('chown irods:irods /etc/irods/server.env*')
 
     # set up the server's credentials
     with settings(hide('running', 'stdout', 'stderr'), warn_only=True):
         with prefix('. /etc/irods/server.env'):
-            sudo('iinit %s' % (env.irods_pass,), user='rods')
+            sudo('iinit %s' % (env.irods_pass,), user='irods')
 
 
 @task
@@ -200,6 +210,8 @@ def setup_root_irodsenv():
     sudo('mkdir -p /root/.irods')
     upload_template(os.path.join(env.templates, 'irodsEnv.tmpl'),
                     '/root/.irods/.irodsEnv', context=env, use_sudo=True)
+    sudo('chown root:root /root/.irods/.irodsEnv')
+    sudo('chmod 644 /root/.irods/.irodsEnv')
     sudo('iinit %s' % (env.irods_pass,))
 
 
@@ -215,5 +227,4 @@ def clean_tmpdir():
         run('rm -rf %s' % (env.tmpdir,))
         del env['tmpdir']
 
-pg_config = '/tmp/postgresql/9.1/main/postgresql.conf'
 

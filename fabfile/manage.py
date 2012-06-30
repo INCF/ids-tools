@@ -44,4 +44,11 @@ def ping_server():
     run('id -a')
     sudo('id -a')
 
-        
+@task
+def get_server_info():
+    env.remote_hostname = run('hostname')
+    distribution = run('lsb_release -i')
+    env.distribution = distribution.split(':')[1].strip('\t')
+    codename = run('lsb_release -c')
+    env.codename = codename.split(':')[1].strip('\t')
+    

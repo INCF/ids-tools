@@ -32,7 +32,9 @@ if __name__ == '__main__':
                       help="path to use as a tablespace for the ICAT database")
     parser.add_option('--install-db', dest='installdb', action='store_true', default=False,
                       help="install Postgres and create the ICAT database")
-                      
+
+    parser.add_option('--fabuser', dest='fabuser',
+                      help="user to connect to remote machine as. Default is calling user.")
     parser.add_option('--fabfile', dest='fabfile',
                       help="location of the fabfile to use for setup tasks")
     parser.add_option('--templates', dest='templates',
@@ -114,9 +116,12 @@ if __name__ == '__main__':
     env_var_list.append('templates=%s' % (options.templates,))
     if options.icat_tablespace:
         env_var_list.append('icat_tablespace=%s' % (options.icat_tablespace,))
+    if options.fabuser:
+        env_var_list.append('user=%s' % (options.fabuser,))
+        
 
     fab_cmd = ['fab', '-f', options.fabfile,
-               '-H', 'root@%s' % (options.icat_host,),
+               '-H', options.icat_host,
                '--set', ','.join(env_var_list)]
     fab_cmd.append('setup.setup_zone')
     

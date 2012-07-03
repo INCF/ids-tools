@@ -88,11 +88,9 @@ if __name__ == '__main__':
     if not options.db_pass: options.db_pass = options.irods_pass
 
 
-    # canonicalize provided hostnames
+    # resolve 'localhost' to a FQDN
     if options.icat_host == 'localhost':
         options.icat_host = socket.getfqdn()
-    else:
-        options.icat_host = socket.getfqdn(options.icat_host)
 
 
     # find the fab files
@@ -124,7 +122,7 @@ if __name__ == '__main__':
                '-H', options.icat_host,
                '--set', ','.join(env_var_list)]
     fab_cmd.append('setup.setup_zone')
-    
+
     ret_code = subprocess.call(fab_cmd)
     
     sys.exit(ret_code)

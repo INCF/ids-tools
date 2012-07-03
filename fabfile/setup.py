@@ -212,7 +212,8 @@ def setup_root_irodsenv():
                     '/root/.irods/.irodsEnv', context=env, use_sudo=True)
     sudo('chown root:root /root/.irods/.irodsEnv')
     sudo('chmod 644 /root/.irods/.irodsEnv')
-    sudo('iinit %s' % (env.irods_pass,))
+    with settings(sudo_prefix="sudo -i -S -p '%(sudo_prompt)s'"):
+        sudo('iinit %s' % (env.irods_pass,))
 
 
 @task

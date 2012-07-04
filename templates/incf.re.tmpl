@@ -1,0 +1,21 @@
+# Rules that implement the policies and procedures for the
+# INCF Dataspace go here
+
+# 
+# No trash can
+#
+acTrashPolicy {
+  msiNoTrashCan;
+}
+
+#
+# We don't really want user homes for users from the incf zone,
+# so override acCreateUserF1 here.
+acCreateUserF1 {
+  ON ($otherUserName like "\*#incf") {
+    msiCreateUser ::: msiRollback;
+    msiAddUserToGroup("public")  :::  msiRollback;
+    msiCommit;
+  }
+}
+

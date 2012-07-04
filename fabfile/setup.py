@@ -150,14 +150,22 @@ def configure_irods(is_icat=False):
         env.db_spass = run("iadmin spass %s %s | sed -e 's/Scrambled form is://'"
                            % (env.db_pass, env.db_key))
         upload_template(os.path.join(env.templates, 'icat.config.tmpl'),
-                        '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
+                        '/etc/irods/server.config', 
+                        context=env, use_sudo=True, mode=0600)
     else:
         upload_template(os.path.join(env.templates, 'server.config.tmpl'),
-                        '/etc/irods/server.config', context=env, use_sudo=True, mode=0600)
+                        '/etc/irods/server.config', 
+                        context=env, use_sudo=True, mode=0600)
     sudo('chown irods:irods /etc/irods/server.config*')
 
+    upload_template(os.path.join(env.templates, 'incf.re.tmpl'),
+                    '/etc/irods/reConfigs/incf.re',
+                    context=env, use_sudo=True, mode=0644)
+    sudo('chown irods:irods /etc/irods/reConfigs/incf.re*')
+
     upload_template(os.path.join(env.templates, 'server.env.tmpl'),
-                    '/etc/irods/server.env', context=env, use_sudo=True, mode=0644)
+                    '/etc/irods/server.env', 
+                    context=env, use_sudo=True, mode=0644)
     sudo('chown irods:irods /etc/irods/server.env*')
 
     # set up the server's credentials

@@ -10,9 +10,11 @@ acTrashPolicy {
 
 #
 # We don't really want user homes for users from the incf zone,
-# so override acCreateUserF1 here.
+# so override acCreateUserF1 here. Checks for usernames with #incf
+# (which are users) and names like ids-* (which are groups).
 acCreateUserF1 {
-  ON ($otherUserName like "\*#incf") {
+  ON ($otherUserName like "\*#incf"
+      || $otherUserName like "ids-*") {
     msiCreateUser ::: msiRollback;
     msiAddUserToGroup("public")  :::  msiRollback;
     msiCommit;

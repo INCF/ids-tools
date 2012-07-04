@@ -1,0 +1,57 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import sys
+import getpass
+import ldap
+
+ldap_server = 'ldap://ldap.dreadnought.org'
+bind_user = ''    # anonymous bind
+#bind_user = 'uid=csmith,cn=users,cn=accounts,dc=dreadnought,dc=org'
+bind_pass = ''
+
+if bind_user and not bind_pass:
+    # get bind password if not doing anonymous
+    bind_pass = getpass.getpass('Enter password for bind user %s: ' % (bind_user,))
+    
+con = ldap.initialize(ldap_server)
+try:
+    con.simple_bind_s(bind_user, bind_pass)
+except ldap.LDAPError, e:
+    print e.message['info']
+    if type(e.message) == dict and e.message.has_key('desc'):
+        print e.message['desc']
+    else:
+        print e
+    sys.exit(1)
+
+print 'Bound to ldap server %s' % (ldap_server,)
+
+
+search_base = 'cn=accounts,dc=dreadnought,dc=org'
+search_filter = '(&(objectclass=posixaccount)(memberOf=cn=dreadnought,*))'
+search_attrs = [ 'uid', 'displayName', 'memberOf' ]
+
+search_results = con.search_s(search_base,
+                              ldap.SCOPE_SUBTREE,
+                              search_filter,
+                              search_attrs,
+    )
+for result in search_results:
+    print result
+
+search_results = con.search_s(search_base,
+                              ldap.SCOPE_SUBTREE,
+                              '(cn=dreadnought)',
+                              [ 'member' ],
+    )
+for groupcn, members in search_results:
+    print '%s:' % (groupcn,)
+    for member in members['member']:
+        print '\tMember: %s' % (member,)
+        
+
+                              
+sys.exit(0)
+
+

@@ -4,6 +4,7 @@ Some helpful functions
 
 import subprocess
 
+
 def shell_command(command_list):
     """
     Performs a shell command using the subprocess object
@@ -24,7 +25,8 @@ def shell_command(command_list):
         return (-1, [None, None])
 
 
-def run_iquest_query(iquest_query, format=None, zone=None):
+
+def run_iquest(query, format=None, zone=None, verbose=False):
     """
     Runs iquest with the given string iquest_query
     
@@ -33,7 +35,7 @@ def run_iquest_query(iquest_query, format=None, zone=None):
     return [string, string] output in separate lines
     """
 
-    if not iquest_query:
+    if not query:
         return None
     
     command = ['iquest', '--no-page']
@@ -45,18 +47,20 @@ def run_iquest_query(iquest_query, format=None, zone=None):
     if format:
         command.append(format)
         
-    command.append('"' + iquest_query + '"')
+    command.append('"' + query + '"')
 
     (rc, output) = shell_command(command)
     if rc != 0 and not 'CAT_NO_ROWS_FOUND' in output[1]:
-        print('Error running %s, rc = %d'
-              % (' '.join(command), rc))
+        if verbose:
+            print('Error running %s, rc = %d'
+                  % (' '.join(command), rc))
         return None
     
     return output[0]
 
 
-def run_iadmin(command, arglist):
+
+def run_iadmin(command, arglist, verbose=False):
     """
     runs the iadmin command given with the provided arguments
 
@@ -70,13 +74,9 @@ def run_iadmin(command, arglist):
 
     (rc, output) = shell_command(iadmin)
     if rc != 0:
-        print('Error running %s, rc = %d'
-              % (' '.join(iadmin), rc))
+        if verbose:
+            print('Error running %s, rc = %d'
+                  % (' '.join(iadmin), rc))
         return -1
 
     return 0
-
-
-    
-
-

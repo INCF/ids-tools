@@ -1,233 +1,50 @@
 #!/usr/bin/python
 # -*- python -*-
 
-import os
 import sys
-import ldap
-import string
+import optparse
 
-debug = 1
-
-
-def connect_to_directory():
-    ldap_server = 'ldap://ldap.incf.org'
-    try:
-        con = ldap.initialize(ldap_server)
-        con.start_tls_s()
-        con.simple_bind_s('', '')
-    except ldap.LDAPError, e:
-        print 'Error binding to LDAP server %s' % (ldap_server,)
-        print e
-        return None
-    return con
+from ids.users import get_ldap_group_membership
+from ids.users import get_irods_group_membership
+from ids.users import synchronize_user_db
 
 
-def do_ldap_search(connection, search_base, filter, attributes):
-    """
-    Wraps up the call to the search_s method of an ldap connection
-
-    returns a list of search results, or None if some error
-    """
-    try:
-        results = connection.search_s(search_base,
-                                      ldap.SCOPE_SUBTREE,
-                                      filter,
-                                      attributes)
-    except ldap.LDAPError, e:
-        print 'Error doing an LDAP search:'
-        print e
-        return None
-
-    return results
-
-
-def get_ldap_group_membership():
-
-    con = connect_to_directory()
-    if con == None:
-        return None
-    
-    search_base = 'ou=groups,dc=incf,dc=org'
-
-    print('Getting list of IDS groups from LDAP...')
-    search_results = do_ldap_search(con, search_base, '(cn=ids-*)', ['cn',])
-    if not search_results:
-        return None
-
-    group_list = {}
-    for results in search_results:
-        group_list[results[1]['cn'][0]] = []
-        
-
-    for group in group_list:
-        print('Getting LDAP group membership for group %s...' % (group,))
-        search_results = do_ldap_search(con, search_base,
-                                        '(cn=%s)' % (group,), ['member',])
-        if search_results == None:
-            return None
-
-        for results in search_results:
-            for dn in results[1]['member']:
-                group_list[group].append(ldap.dn.str2dn(dn)[0][0][1])
-
-        
-    return group_list
-
-
-    
-def get_group_membership(zone):
-    """
-    Retrieves the IDS users and groups from iRODS. Only group names starting
-    with 'ids-' are retrieved.
-
-    Input: if 'zone' is provided, its the name of the remote zone for iquest.
-
-    Returns: a dict where the key is the group name, and the value is a list
-    of users who are members of the group.
-    """
-
-    query = "select USER_GROUP_NAME, USER_NAME where USER_GROUP_NAME like 'ids-%'"
-
-    output = run_iquest_query(query, format='%s:%s', zone=zone)
-    if output == None:
-        # some error occurred
-        return None
-
-    group_list = {}
-
-    for line in output.splitlines():
-        if line.startswith('Zone is'):
-            continue
-        group, user = line.split(':')
-        if not group == user:
-            if group in group_list:
-                group_list[group].append(user)
-            else:
-                group_list[group] = [ user, ]
-        elif group not in group_list:
-            group_list[group] = []  # empty group
-        
-    return group_list
-
-    
     
 if __name__ == '__main__':
 
-    lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../lib"))
-    sys.path.insert(0, lib_dir)
-
-    from ids.utils import *
-
-    ids_groups = {}
-    local_groups = {}
+    parser = optparse.OptionParser()
+    parser.add_option('--verbose', '-v', action='store_true',
+                      dest="verbose", default=False,
+                      help='print progress messages')
+    options, args = parser.parse_args()
 
 
-    # get list of groups and users from 'incf' zone
-    print('Getting list of users from \'incf\' zone...')
-    ids_groups = get_ldap_group_membership()
-    if ids_groups == None:
+    print('Getting list of users from LDAP...')
+    ldap_groups = get_ldap_group_membership()
+    if ldap_groups == None:
         sys.exit(1)
-
-    if debug:
-        for group in ids_groups:
-            print('IDS group %s:' % (group,))
-            for user in ids_groups[group]:
+    if options.verbose:
+        for group in ldap_groups:
+            print('LDAP group %s:' % (group,))
+            for user in ldap_groups[group]:
                 print('\t%s' % (user,))
 
     
-    # populate the list of local groups and users
-    print('Getting list of users from the local zone...')
-    local_groups = get_group_membership(None)
-    if ids_groups == None:
+    print('Getting list of users from the \'incf\' zone...')
+    irods_groups = get_irods_group_membership(None)
+    if irods_groups == None:
         sys.exit(1)
-
-    if debug:
-        for group in local_groups:
-            print('Local group %s:' % (group,))
-            for user in local_groups[group]:
+    if options.verbose:
+        for group in irods_groups:
+            print('iRODS group %s:' % (group,))
+            for user in irods_groups[group]:
                 print('\t%s' % (user,))
 
 
-    # Removals
-
-    # remove groups locally that don't exist in IDS
-    print('Removing groups no longer defined in the \'incf\' zone...')
-    for group in local_groups:
-        if group not in ids_groups:
-            if run_iadmin('rmgroup', [ group, ]):
-                print('\terror removing group %s' % (group,))
-            else:
-                print('\tremoved group %s' % (group,))
-
-    # remove users that don't exist in IDS's ids-user group
-    print('Removing users that have been removed from \'ids-user\'...')
-    if 'ids-user' in local_groups:
-        for user in local_groups['ids-user']:
-            if user not in ids_groups['ids-user']:
-                zone_user = user + '#incf'
-                if run_iadmin('rmuser', [ zone_user, ]):
-                    print('\terror removing user %s' % (zone_user,))
-                    print('\tThey might still own files in iRODS.')
-                    # if run_iadmin('rfg', ['ids-user', zone_user]):
-                    #     print('\terror removing %s from group ids-user' % (zone_user,))
-                    # else:
-                    #     print('\tremoved user %s from group ids-user' % (zone_user,))
-                else:
-                    print('\tremoved user %s' % (zone_user,))
+    print('Synchronizing \'incf\' zone user DB with LDAP users and groups...')
+    rc = synchronize_user_db(ldap_groups, irods_groups, verbose=options.verbose)
+    if rc == None:
+        sys.exit(1)
 
 
-    # Additions
-
-    # add groups from IDS that don't exist locally
-    print('Adding new \'incf\' zone groups...')
-    for group in ids_groups:
-        if group not in local_groups:
-            if run_iadmin('mkgroup', [ group, ]):
-                print('\terror adding new group %s' % (group,))
-            else:
-                print('\tadded new group %s' % (group,))
-                local_groups[group] = []
-
-    # add users from ids-user that don't exist locally
-    print('Adding new users from \'ids-user\'...')
-    for user in ids_groups['ids-user']:
-        if user not in local_groups['ids-user']:
-            zone_user = user + '#incf'
-            if run_iadmin('mkuser', [ zone_user, 'rodsuser' ]):
-                print('\terror adding new user %s' % (zone_user,))
-            else:
-                print('\tadded new user %s' % (zone_user,))
-                if run_iadmin('atg', [ 'ids-user', zone_user ]):
-                    print('\terror adding %s to \'ids-user\' group' % (zone_user,))
-                else:
-                    print('\tadded %s to group \'ids-user\'' % (zone_user,))
-
-
-
-    # Synchronize group membership (except for ids-user which has
-    # already been processed)
-    print('Synchronizing group membership...')
-    for group in ids_groups:
-        if group == 'ids-user': continue
-
-        # remove user from group
-        for user in local_groups[group]:
-            if user not in ids_groups[group]:
-                zone_user = user + '#incf'
-                if run_iadmin('rfg', [group, zone_user]):
-                    print('\terror removing %s from group \'%s\'' % (zone_user, group))
-                else:
-                    print('\tremoved user %s from group \'%s\'' % (zone_user, group))
-                    
-        # add users to group
-        for user in ids_groups[group]:
-            if user not in local_groups[group]:
-                zone_user = user + '#incf'
-                if run_iadmin('atg', [ group, zone_user]):
-                    print('\terror adding %s to group \'%s\'' % (zone_user, group))
-                else:
-                    print('\tadded user %s to group \'%s\'' % (zone_user, group))
-
-
-    print('All done.')
     sys.exit(0)

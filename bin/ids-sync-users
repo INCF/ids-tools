@@ -4,8 +4,44 @@
 import os
 import sys
 
-debug = 0
+debug = 1
 
+def get_group_membership(zone):
+    """
+    Retrieves the IDS users and groups from iRODS. Only group names starting
+    with 'ids-' are retrieved.
+
+    Input: if 'zone' is provided, its the name of the remote zone for iquest.
+
+    Returns: a dict where the key is the group name, and the value is a list
+    of users who are members of the group.
+    """
+
+    query = "select USER_GROUP_NAME, USER_NAME where USER_GROUP_NAME like 'ids-%'"
+
+    output = run_iquest_query(query, format='%s:%s', zone=zone)
+    if output == None:
+        # some error occurred
+        return None
+
+    group_list = {}
+
+    for line in output.splitlines():
+        if line.startswith('Zone is'):
+            continue
+        group, user = line.split(':')
+        if not group == user:
+            if group in group_list:
+                group_list[group].append(user)
+            else:
+                group_list[group] = [ user, ]
+        elif group not in group_list:
+            group_list[group] = []  # empty group
+        
+    return group_list
+
+    
+    
 if __name__ == '__main__':
 
     lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../lib"))
@@ -19,23 +55,9 @@ if __name__ == '__main__':
 
     # get list of groups and users from 'incf' zone
     print('Getting list of users from \'incf\' zone...')
-    
-    query = "select USER_GROUP_NAME, USER_NAME where USER_GROUP_NAME like 'ids-%'"
-
-    output = run_iquest_query(query, format='%s:%s', zone='incf')
-    if output == None:
+    ids_groups = get_group_membership('incf')
+    if ids_groups == None:
         sys.exit(1)
-        
-    for line in output.splitlines():
-        if line == 'Zone is incf': continue
-        group, user = line.split(':')
-        if not group == user:
-            if group in ids_groups:
-                ids_groups[group].append(user)
-            else:
-                ids_groups[group] = [ user, ]
-        elif group not in ids_groups:
-            ids_groups[group] = []  # empty group
 
     if debug:
         for group in ids_groups:
@@ -46,22 +68,9 @@ if __name__ == '__main__':
 
     # populate the list of local groups and users
     print('Getting list of users from the local zone...')
-
-    query = "select USER_GROUP_NAME, USER_NAME where USER_GROUP_NAME like 'ids-%'"
-
-    output = run_iquest_query(query, format='%s:%s')
-    if output == None:
+    local_groups = get_group_membership(None)
+    if ids_groups == None:
         sys.exit(1)
-    
-    for line in output.splitlines():
-        group, user = line.split(':')
-        if not group == user:
-            if group in local_groups:
-                local_groups[group].append(user)
-            else:
-                local_groups[group] = [ user, ]
-        elif group not in local_groups:
-            local_groups[group] = []
 
     if debug:
         for group in local_groups:
@@ -70,6 +79,7 @@ if __name__ == '__main__':
                 print('\t%s' % (user,))
 
 
+    
     # Removals
 
     # remove groups locally that don't exist in IDS

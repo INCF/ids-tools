@@ -121,7 +121,7 @@ if __name__ == '__main__':
     fab_cmd = ['fab', '-f', options.fabfile,
                '-H', options.icat_host,
                '--set', ','.join(env_var_list)]
-    fab_cmd.append('setup.setup_zone')
+    fab_cmd.append('setup_zone')
 
     ret_code = subprocess.call(fab_cmd)
     

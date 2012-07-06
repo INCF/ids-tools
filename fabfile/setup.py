@@ -3,8 +3,6 @@ import string
 import random
 import re
 
-import manage
-
 from fabric.api import *
 from fabric.contrib.files import upload_template, sed, uncomment, exists
 
@@ -20,28 +18,6 @@ psql_cmd = "PGPASSWORD=%s psql -h %s -U %s -d %s -f %s"
 irods_default_zone = 'tempZone'
 irods_schema_dir = '/usr/lib/irods/schema'
 
-
-@task
-def setup_zone():
-    execute(manage.get_server_info)
-    execute(install_packages, is_icat=True)
-    execute(create_icat_db)
-    execute(create_icat_schema)
-    execute(configure_irods, is_icat=True)
-    execute(start_irods)
-    execute(setup_icat)
-    execute(setup_root_irodsenv)
-    execute(clean_tmpdir)
-
-
-@task
-def setup_ds():
-    execute(install_packages)
-    execute(configure_irods)
-    execute(start_irods)
-    execute(setup_root_irodsenv)
-    execute(clean_tmpdir)
-    
 
 @task
 def install_packages(is_icat=False):
@@ -168,22 +144,12 @@ def configure_irods(is_icat=False):
                     context=env, use_sudo=True, mode=0644)
     sudo('chown irods:irods /etc/irods/server.env*')
 
-    # set up the server's credentials
+    # set up the server's credentials if an ICAT
     with settings(hide('running', 'stdout', 'stderr'), warn_only=True):
         with prefix('. /etc/irods/server.env'):
             sudo('iinit %s' % (env.irods_pass,), user='irods')
 
 
-@task
-def start_irods():
-    # make sure it's set to start at boot
-    sed('/etc/default/irods',
-        'START_IRODS=no',
-        'START_IRODS=yes',
-        use_sudo=True)
-    sudo('service irods start')
-
-    
 @task
 def setup_icat():
     execute(create_tmpdir)

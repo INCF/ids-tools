@@ -22,10 +22,14 @@ if __name__ == '__main__':
                       help="username of the iRODS administrative user")
     parser.add_option('--irodspassword', '--pass', dest='irods_pass',
                       help="password for the iRODS administrative user")
+
     parser.add_option('--storagepath', '--vaultpath', dest='vault_path',
                       help="path (relative to data server) where iRODS files should be stored")
     parser.add_option('--resourcename', dest='resc_name',
                       help="name for the storage resource in the zone")
+
+    parser.add_option('--fabuser', dest='fabuser',
+                      help="user to connect to remote machine as. Default is calling user.")
     parser.add_option('--fabfile', dest='fabfile',
                       help="location of the fabfile to use for setup tasks")
     parser.add_option('--templates', dest='templates',
@@ -77,12 +81,9 @@ if __name__ == '__main__':
             options.irods_pass = tmp_pass1
 
 
-    # canonicalize provided hostnames
-    options.icat_host = socket.getfqdn(options.icat_host)
-    if not options.irods_host or options.irods_host == 'localhost':
+    # resolve 'localhost' to a FQDN
+    if options.irods_host == 'localhost':
         options.irods_host = socket.getfqdn()
-    else:
-        options.irods_host = socket.getfqdn(options.irods_host)
 
 
     # validity check vault_path and resc_name ... need both or neither
@@ -122,11 +123,13 @@ if __name__ == '__main__':
     if options.vault_path:
         env_var_list.append('vault_path=%s' % (options.vault_path,))
         env_var_list.append('resc_name=%s' % (options.resc_name,))
+    if options.fabuser:
+        env_var_list.append('user=%s' % (options.fabuser,))
 
     fab_cmd = ['fab', '-f', options.fabfile,
-               '-H', 'root@%s' % (options.irods_host,),
+               '-H', options.irods_host,
                '--set', ','.join(env_var_list)]
-    fab_cmd.append('setup.setup_ds')
+    fab_cmd.append('setup_ds')
     if options.vault_path:
         fab_cmd.append('manage.add_resource')
     

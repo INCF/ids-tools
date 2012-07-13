@@ -1,0 +1,84 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import optparse
+import sys
+import os
+import subprocess
+
+ids_rule_file = '/etc/irods/reConfigs/ids.re'
+ids_rule_src = '/etc/irods/reConfigs/ids-src.re'
+core_rule_file = '/etc/irods/reConfigs/core.re'
+
+rules_dir = os.path.abspath(os.path.join(os.path.dirname(sys.argv[0]), "../lib/rules"))
+
+
+if __name__ == '__main__':
+
+    parser = optparse.OptionParser()
+    parser.add_option('--apply-only', action='store_true',
+                      dest='apply', default=False,
+                      help='only pull rules from DB and apply locally')
+    parser.add_option('--force', action='store_true',
+                      dest='force', default=False,
+                      help='force the re-load of the source rule file')
+    parser.add_option('--verbose', '-v', action='store_true',
+                      dest='verbose', default=False,
+                      help='print progress messages')
+    options, args = parser.parse_args()
+
+
+    # just generate the latest rule base file from the DB
+    if options.apply:
+        if options.verbose:
+            print('Populating local rules file from ICAT')
+        rc = subprocess.call(["irule", "-F",
+                              os.path.join(rules_dir, "ids-apply-rules.r")])
+        if not rc:
+            # this forces the irodsReServer to re-read the rule base
+            os.utime(core_rule_file, None)
+        sys.exit(rc)
+
+
+    # check if this is the zone server. Only zone servers should have the
+    # source rules file installed
+    if not os.path.isfile(ids_rule_src):
+        if options.verbose:
+            print('Can only perform sync from source on zone server')
+        sys.exit(1)
+
+    # exit if the source rule file is older than the generated rule file
+    # (and the operation isn't being forced)
+    if not options.force:
+        src_stat = os.stat(ids_rule_src)
+        dest_stat = os.stat(ids_rule_file)
+        if dest_stat.st_mtime > src_stat.st_mtime:
+            if options.verbose:
+                print('Source rules file older than rule base. No need to synchronize.')
+            sys.exit(0)
+    
+    # store new rule definitions in the database as the new current version
+    if options.verbose:
+        print('Store new source rules in ICAT')
+    rc = subprocess.call(["irule", "-F",
+                          os.path.join(rules_dir, "ids-store-rules.r")])
+    if rc:
+        sys.exit(rc)
+
+    # apply new rules locally
+    if options.verbose:
+        print('Populating local rules file from ICAT')
+    rc = subprocess.call(["irule", "-F",
+                          os.path.join(rules_dir, "ids-apply-rules.r")])
+    if rc:
+        sys.exit(rc)
+
+    # this forces the irodsReServer to re-read the rule base
+    os.utime(core_rule_file, None)
+
+    if options.verbose:
+        print('Push new rules to all zone data servers.')
+    # push new rule definitions to all zone data servers
+    rc = subprocess.call(["irule", "-F",
+                          os.path.join(rules_dir, "ids-push-rules.r")])
+    sys.exit(rc)

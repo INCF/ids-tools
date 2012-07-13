@@ -134,10 +134,16 @@ def configure_irods(is_icat=False):
                         context=env, use_sudo=True, mode=0600)
     sudo('chown irods:irods /etc/irods/server.config*')
 
-    upload_template(os.path.join(env.templates, 'incf.re.tmpl'),
-                    '/etc/irods/reConfigs/incf.re',
+    if is_icat:
+        upload_template(os.path.join(env.templates, 'ids-src.re.tmpl'),
+                        '/etc/irods/reConfigs/ids-src.re',
+                        context=env, use_sudo=True, mode=0644)
+        sudo('chown irods:irods /etc/irods/reConfigs/ids-src.re*')
+
+    upload_template(os.path.join(env.templates, 'ids.re.tmpl'),
+                    '/etc/irods/reConfigs/ids.re',
                     context=env, use_sudo=True, mode=0644)
-    sudo('chown irods:irods /etc/irods/reConfigs/incf.re*')
+    sudo('chown irods:irods /etc/irods/reConfigs/ids.re*')
 
     upload_template(os.path.join(env.templates, 'server.env.tmpl'),
                     '/etc/irods/server.env', 

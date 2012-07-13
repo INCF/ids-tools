@@ -1,12 +1,47 @@
+# ids-src.re
+#
 # Rules that implement the policies and procedures for the
 # INCF Dataspace go here
+#
+# Once this file has been modified, ids-sync-zone-rules 
+# should be called. That will upload the source rules into
+# the ICAT DB for this zone, push them to the configured
+# rule file (incf.re), and then push the change to all the
+# data servers in the zone.
+#
+
 
 # 
-# No trash can
+# Turn off the "Trash Can"
+#
+# Generally wastes space as users forget to purge their trash.
 #
 acTrashPolicy {
   msiNoTrashCan;
 }
+
+
+#
+# Strict ACL checking
+#
+# Make sure that ACLs are honoured when browsing the namespace. 
+# Users must have at least "read" permission to icd into, and ils
+# collections and see the files.
+#
+acAclPolicy {
+  msiAclPolicy("STRICT");
+}
+
+
+#
+# By default, acPostProcForPut is not called for bulk updates, but we
+# will set the acBulkPutPostProcPolicy so that it is called for each
+# file, since this workflow is key for the operation of the archive.
+#
+acBulkPutPostProcPolicy {
+  msiSetBulkPutPostProcPolicy("on");
+}
+
 
 #
 # We don't really want user homes for users from the incf zone,
@@ -20,4 +55,5 @@ acCreateUserF1 {
     msiCommit;
   }
 }
+
 

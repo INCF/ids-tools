@@ -47,13 +47,14 @@ def run_iquest(query, format=None, zone=None, verbose=False):
     if format:
         command.append(format)
         
-    command.append('"' + query + '"')
+    command.append(query)
 
     (rc, output) = shell_command(command)
     if rc != 0 and not 'CAT_NO_ROWS_FOUND' in output[1]:
         if verbose:
             print('Error running %s, rc = %d'
                   % (' '.join(command), rc))
+            print output[1]
         return None
     
     return output[0]
@@ -77,6 +78,7 @@ def run_iadmin(command, arglist, verbose=False):
         if verbose:
             print('Error running %s, rc = %d'
                   % (' '.join(iadmin), rc))
+            print output[1]
         return -1
 
     return 0

@@ -1,0 +1,93 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import sys
+import optparse
+
+from ids.utils import run_iquest, run_iadmin
+
+
+query = "select ZONE_TYPE, ZONE_NAME, ZONE_CONNECTION"
+
+
+if __name__ == '__main__':
+
+    parser = optparse.OptionParser()
+    parser.add_option('--verbose', '-v', action='store_true',
+                      dest="verbose", default=False,
+                      help='print progress messages')
+    options, args = parser.parse_args()
+
+
+    # Local list of remote zones
+    if options.verbose:
+        print('Getting list of remote zones from local ICAT.')
+    output = run_iquest(query, format='%s/%s/%s',
+                        verbose=options.verbose)
+    if output == None:
+        sys.exit(1)
+
+    local_zone = None
+    local_zone_list = {}
+    for line in output.splitlines():
+        ztype, zname, zloc = line.split('/')
+        if ztype == 'local':
+            local_zone = zname
+        else:
+            # don't include 'incf' zone in list. Changes to
+            # that zone will be made manually.
+            if zname != 'incf':
+                local_zone_list[zname] = zloc
+
+    if options.verbose:
+        for zname in local_zone_list:
+            print('\t%s' % (zname,))
+        
+
+    # INCF zone server's list of remote zones
+    if options.verbose:
+        print('Getting list of remote zones from \'incf\' zone ICAT.')
+    output = run_iquest(query, format='%s/%s/%s',
+                        zone='incf', verbose=options.verbose)
+    if output == None:
+        sys.exit(1)
+
+    incf_zone_list = {}
+    for line in output.splitlines():
+        if line.startswith('Zone is'):
+            continue
+        ztype, zname, zloc = line.split('/')
+        if ztype != 'local':
+            # leave our own zone out of the list
+            if zname != local_zone:
+                incf_zone_list[zname] = zloc
+
+    if options.verbose:
+        for zname in incf_zone_list:
+            print('\t%s' % (zname,))
+        
+
+    # Synchronize the zone lists. Pass through local zone's list
+    # checks for removals or if location has changed. Pass through
+    # incf zone's list will look for zones to add.
+    for zname in local_zone_list:
+        if zname not in incf_zone_list:
+            if options.verbose:
+                print('Removing zone %s' % (zname,))
+            run_iadmin('rmzone', [ zname, ], verbose=options.verbose)
+        elif local_zone_list[zname] != incf_zone_list[zname]:
+            if options.verbose:
+                print('Changing location of zone %s to %s'
+                      % (zname, incf_zone_list[zname]))
+            run_iadmin('modzone', [ zname, 'conn', incf_zone_list[zname]],
+                       verbose=options.verbose)
+    for zname in incf_zone_list:
+        if zname not in local_zone_list:
+            if options.verbose:
+                print('Adding zone %s with location %s'
+                      % (zname, incf_zone_list[zname]))
+            run_iadmin('mkzone', [ zname, 'remote', incf_zone_list[zname]],
+                       verbose=options.verbose)
+    
+    
+    sys.exit(0)

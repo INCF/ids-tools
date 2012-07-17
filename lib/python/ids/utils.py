@@ -1,8 +1,9 @@
 """
-Some helpful functions
+Some helpful functions for the other IDS modules and utilities
 """
 
 import subprocess
+
 
 
 def shell_command(command_list):
@@ -82,3 +83,21 @@ def run_iadmin(command, arglist, verbose=False):
         return -1
 
     return 0
+
+
+
+def get_local_zone(verbose=False):
+    """
+    This function retrieves the name of the local
+    zone using an iquest query.
+
+    Returns the name of the local zone, or None if
+    some error occurred.
+    """
+
+    zname = run_iquest("select ZONE_NAME where ZONE_TYPE = 'local'",
+                       format='%s', verbose=verbose)
+    if zname == None:
+        return None
+
+    return zname.rstrip('\n')

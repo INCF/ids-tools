@@ -1,8 +1,8 @@
 """
-Utility functions for managing users within the IDS. Includes
-functions for syncronizing users and groups, as well as
-functions for retrieving lists of users and groups from
-both iRODS and LDAP that conform to IDS naming policies.
+Utility functions for dealing with users within the IDS.
+Includes functions for syncronizing users and groups, as
+well as functions for retrieving lists of users and groups
+from both iRODS and LDAP that conform to IDS naming policies.
 """
 
 import ldap
@@ -223,3 +223,101 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
                         print('\tadded user %s to group %s' % (zone_user, group))
 
     return 1
+
+
+def irods_user_to_id(username, verbose=None):
+    """
+    Look up a user in the iRODS user DB and return the
+    user identifier (a number). If the user isn't found,
+    return an empty string. If an error occurs, return None.
+
+    username should be in the form 'user#zone'
+
+    Note: this also works for looking up groups.
+    """
+    if not username:
+        return None
+
+    user = username.split('#', 1)
+    if len(user) != 2:
+        if verbose:
+            print('irods_user_to_id: username should be of form "user#zone"')
+        return None
+
+    id_query = "select USER_ID where USER_NAME = '%s' and USER_ZONE = '%s'" % (user[0], user[1])
+    id = run_iquest(id_query, format='%s', verbose=verbose)
+    if id == None:
+        return None
+    elif not id:
+        # user not found
+        return ""
+    else:
+        # keep in string form, as this is what iRODS mostly works with
+        return id.rstrip('\n')
+    
+
+
+def irods_id_to_user(id, verbose=None):
+    """
+    Look up a user id in the iRODS user DB and return the
+    user name. If the user isn't found, return an empty string.
+    If an error occurs, return None.
+
+    the username returned is in the form 'user#zone'
+    
+    Note: this also works for looking up groups.
+    """
+    if not id:
+        return None
+
+    user_query = "select USER_NAME, USER_ZONE where USER_ID = '%s'" % (id,)
+    user = run_iquest(user_query, format='%s#%s', verbose=verbose)
+    if user == None:
+        return None
+    elif not user:
+        # user not found
+        return ""
+    else:
+        # keep in string form, as this is what iRODS mostly works with
+        return user.rstrip('\n')
+
+
+
+def irods_user_exists(username, verbose=False):
+    """
+    Check if a particular user exists in iRODS. Returns
+    1 if yes, and 0 if no, and -1 if some error occurred.
+    """
+    if not username:
+        return -1
+
+    user = username.split('#', 1)
+    if len(user) != 2:
+        if verbose:
+            print('irods_user_to_id: username should be of form "user#zone"')
+        return -1
+
+    user_query = "select count(USER_NAME) where USER_NAME = '%s' and USER_ZONE = '%s'"
+    exists = run_iquest(user_query % (user[0], user[1]), format='%s', verbose=verbose)
+    if exists == None:
+        return -1
+    else:
+        return int(exists)
+
+
+    
+def get_irods_group(groupname, verbose=False):
+    """
+    Return the list of members of the provided group,
+    or the empty list if there are no members. If an
+    error occurs, return None.
+    """
+    if not groupname:
+        return None
+
+    group_query = "select USER_NAME, USER_ZONE where USER_GROUP_NAME = '%s'"
+    output = run_iquest(group_query % (groupname,), format='%s#%s', verbose=verbose)
+    if output == None:
+        return None
+
+    return output.splitlines()

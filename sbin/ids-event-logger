@@ -362,11 +362,11 @@ def process_event(event):
 
 
 
-def parse_event(msg_body):
+def parse_event(msg_header, msg_body):
     """
-    Given the message body of a message we're interested
-    in, parse the string into the component parts that make
-    up an event of interest. 
+    Given a message we're interested, parse the header and
+    body strings into the component parts that make up
+    an event of interest. 
 
     Returns a dictionary (an 'event') with items:
     - timestamp
@@ -378,14 +378,23 @@ def parse_event(msg_body):
     If there is a problem parsing, None will be returned.
     """
 
-    m = re.match(r'Done:(\w+)\((.*)\)(.*)$', msg_body)
-    if not m:
-        return None
-
     event = {}
 
     # until the messages themselves have timestamps, generate here
-    event['timestamp'] = datetime.utcnow().strftime(iso_8601_fmt)
+    #event['timestamp'] = datetime.utcnow().strftime(iso_8601_fmt)
+
+    # parse out the timestamp from the header
+    m = re.match(r'iaudit:(.+):.*$', msg_header)
+    if not m:
+        return None
+
+    event['timestamp'] = m.group(1)
+
+
+    # parse the action and parameters out of the body
+    m = re.match(r'Done:(\w+)\((.*)\)(.*)$', msg_body)
+    if not m:
+        return None
 
     if m.group(1) in action_to_event:
         event['type'] = action_to_event[m.group(1)]
@@ -518,7 +527,7 @@ if __name__ == '__main__':
             continue
 
         # Parse the message into event 'fields'
-        event = parse_event(msg['body'])
+        event = parse_event(msg['header'], msg['body'])
         if not event:
             continue
 

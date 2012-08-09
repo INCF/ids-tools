@@ -101,3 +101,21 @@ def get_local_zone(verbose=False):
         return None
 
     return zname.rstrip('\n')
+
+
+
+def get_zone_list(verbose=False):
+    """
+    This function retrieves a list of all the zones
+    within the IDS.
+
+    Returns a list sorted by zone name, or None if
+    some error occurred.
+    """
+
+    output = run_iquest('select order(ZONE_NAME)',
+                        format='%s', verbose=verbose)
+    if not output:
+        return None
+
+    return [zone.rstrip('\n') for zone in output.splitlines()]

@@ -1,0 +1,128 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import sys
+import optparse
+
+from ids.utils import get_zone_list, run_iquest
+
+
+
+# supported query operators
+query_ops = ['=', '<>', '>', '>=', '<', '<=', 'LIKE', 'like']
+
+
+# some help text and example queries
+usage_text = (
+    "ids-search-meta <attribute name> <operator> <value>\n\n"
+    "<operator> is one of '=', '<>', '>', '>=', '<', '<=', 'like', or 'LIKE'\n"
+    "(operators such as '<' have meaning in the shell and must be single quoted)\n\n"
+    "Options:\n"
+    "--help             show this help message and example queries\n"
+    "--verbose          print extra progress messages\n"
+    "--zone=zone_name   limit the search to the named zone.\n"
+    "                   Can be specified more than once.\n"
+    )
+examples_text = (
+    "Query examples:\n"
+    "  ids-search-meta attribute = value\n"
+    "  ids-search-meta attribute '<>' value\n"
+    "  ids-search-meta attribute '<' 1234\n"
+    "  ids-search-meta textattribute like %substring%\n"
+    "  ids-search-meta 'space in attr' = value\n"
+    "  ids-search-meta attribute = 'space in value'\n"
+    )
+    
+
+
+if __name__ == '__main__':
+
+    # parse and validate options and arguments
+    
+    parser = optparse.OptionParser(add_help_option=None)
+    parser.add_option('--zone', '-z', dest='zones', action='append')
+    parser.add_option('--help', '-h', action='store_true', default=False)
+    parser.add_option('--verbose', '-v', action='store_true', default=False)
+    parser.add_option('--collections', '-c', action='store_true', default=False)
+    parser.add_option('--dataobjects', '-d', action='store_true', default=False)
+    options, args = parser.parse_args()
+
+    if options.help or len(args) != 3:
+        print usage_text
+        print examples_text
+        sys.exit(0)
+
+    # clean away any surrounding white space
+    attr = args[0].strip()
+    op = args[1].strip()
+    value = args[2].strip()
+
+    if op not in query_ops:
+        print('Unrecognized operator \'%s\'.' % (op,))
+        sys.exit(1)
+
+    # by default, we search both collections and data
+    # objects, but the user can choose to only look
+    # at one or the other with the -c and -d options
+    if not options.collections and not options.dataobjects:
+        options.collections = True
+        options.dataobjects = True
+    
+
+    # get list of zones to operate on
+    zone_list = get_zone_list(options.verbose)
+    if not zone_list:
+        sys.exit(1)
+
+    # check if zone options are valid
+    if options.zones:
+        no_zones = [zone for zone in options.zones if zone not in zone_list]
+        if no_zones:
+            print('Unknown zones: %s' % (' '.join(no_zones),))
+            sys.exit(1)
+        zone_list = options.zones
+
+
+    # iterate over zones, running the meta-data queries for each zone
+
+    coll_query = (
+        "select COLL_NAME, META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE"
+        " where META_COLL_ATTR_NAME = '%s'"
+        " and META_COLL_ATTR_VALUE %s '%s'"
+        )
+    
+    data_query = (
+        "select COLL_NAME, DATA_NAME, META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE"
+        " where META_DATA_ATTR_NAME = '%s'"
+        " and META_DATA_ATTR_VALUE %s '%s'"
+        )
+    
+    for zone in zone_list:
+        if options.verbose:
+            print('Querying in zone %s...' % (zone,))
+
+        if options.collections:
+            coll_list = run_iquest(coll_query % (attr, op, value),
+                                   "collection:  %s: %s = %s", zone, options.verbose)
+            if coll_list == None:
+                print('Error running iquest. Aborting search.')
+                sys.exit(1)
+            for coll in coll_list.splitlines():
+                if coll.startswith('Zone is'):
+                    continue
+                print coll
+
+        if options.dataobjects:
+            data_list = run_iquest(data_query % (attr, op, value),
+                                   "data object: %s/%s: %s = %s", zone, options.verbose)
+            if data_list == None:
+                print('Error running iquest. Aborting search.')
+                sys.exit(1)
+            for obj in data_list.splitlines():
+                if obj.startswith('Zone is'):
+                    continue
+                print obj
+
+        
+
+    sys.exit(0)

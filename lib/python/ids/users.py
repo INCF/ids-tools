@@ -7,7 +7,18 @@ from both iRODS and LDAP that conform to IDS naming policies.
 
 import ldap
 
-from ids.utils import run_iquest, run_iadmin
+from ids.utils import run_iquest, run_iadmin, get_local_zone
+
+
+
+# we'll implement a cache of user ids to usernames since
+# there are use cases for iterating over ACLs in collections
+# and we want to avoid spurious iquest commands.
+#
+# There needs to be a cache per zone, since user to id mapping
+# is zone specific.
+user_id_cache = {}
+
 
 
 def connect_to_directory(ldap_server):
@@ -257,7 +268,7 @@ def irods_user_to_id(username, verbose=None):
     
 
 
-def irods_id_to_user(id, verbose=None):
+def irods_id_to_user(id, zone=None, verbose=None):
     """
     Look up a user id in the iRODS user DB and return the
     user name. If the user isn't found, return an empty string.
@@ -270,8 +281,19 @@ def irods_id_to_user(id, verbose=None):
     if not id:
         return None
 
+    if not zone:
+        zone = get_local_zone(verbose)
+        if not zone:
+            return None
+
+    # lookup user id in the cache first
+    if zone in user_id_cache:
+        if id in user_id_cache[zone]:
+            return user_id_cache[zone][id]
+
+    # no cache hit ... look it up
     user_query = "select USER_NAME, USER_ZONE where USER_ID = '%s'" % (id,)
-    user = run_iquest(user_query, format='%s#%s', verbose=verbose)
+    user = run_iquest(user_query, format='%s#%s', zone=zone, verbose=verbose)
     if user == None:
         return None
     elif not user:
@@ -279,7 +301,11 @@ def irods_id_to_user(id, verbose=None):
         return ""
     else:
         # keep in string form, as this is what iRODS mostly works with
-        return user.rstrip('\n')
+        user_name = user.rstrip('\n')
+        if zone not in user_id_cache:
+            user_id_cache[zone] = {}
+        user_id_cache[zone][id] = user_name
+        return user_name
 
 
 

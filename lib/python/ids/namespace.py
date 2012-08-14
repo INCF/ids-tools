@@ -161,6 +161,7 @@ def irods_setacls(path, acl_list, verbose=False):
     
     Returns 0 on success, non-zero on error.
     """
+    
     if not path or not acl_list:
         return 1
 
@@ -169,7 +170,46 @@ def irods_setacls(path, acl_list, verbose=False):
         if rc:
             if verbose:
                 print("Error running 'ichmod %s %s %s': rc = %d:"
-                      % (acl[1], acl[0], path))
+                      % (acl[1], acl[0], path, rc))
+                print output[1]
+            return rc
+
+    return 0
+
+
+
+def irods_setavus(path, avu_list, verbose=False):
+    """
+    This function will add the AVUs listed in 'avu_list'
+    to the collection or data object at 'path'.
+
+    'avu_list' is a list where each element itself is
+    a list consisting of the type ('-C' for collection
+    and '-d' for data object), attribute name, value
+    and optional units. 
+
+    Note. On an error return, some of the AVUs might have
+    been applied. The function does not "roll back" on error.
+    
+    Returns 0 on success, non-zero on error.
+    """
+    
+    if not path or not avu_list:
+        return 1
+
+    for avu in avu_list:
+        imeta_cmd = ['imeta', 'add']
+        imeta_cmd.append(avu[0])     # type ... -d or -C
+        imeta_cmd.append(path)       # target collection or object
+        imeta_cmd.append(avu[1])     # attribute name
+        imeta_cmd.append(avu[2])     # attribute value
+        if avu[3]:
+            imeta_cmd.append(avu[3]) # units (if provided)
+        (rc, output) = shell_command(imeta_cmd)
+        if rc and 'Operation now in progress' not in output[1]:
+            if verbose:
+                print('Error running imeta add on %s: rc = %d:'
+                      % (path, rc))
                 print output[1]
             return rc
 

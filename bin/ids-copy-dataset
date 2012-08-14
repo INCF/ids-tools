@@ -1,0 +1,458 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import sys
+import argparse
+from subprocess import Popen, PIPE, STDOUT
+
+from ids.utils import run_iquest, shell_command
+from ids.namespace import irods_coll_exists, irods_setacls, irods_setavus
+from ids.users import irods_id_to_user
+
+
+def run_irsync(source, destination, verbose=False):
+    """
+    This function runs the iRODS irsync command on the
+    given source and destination. In this case, source
+    and destination are assumed to be iRODS collection
+    names, so the function will adjust the command
+    syntax appropriately.
+
+    This function will not return until
+    irsync has completed, and it will print all output
+    from irsync as it is read.
+
+    The verbose option will add the verbose flag (-v) to irsync.
+
+    The function returns the exit code from irsync.
+    """
+
+    if not source or not destination:
+        return -1
+
+    irsync_cmd = [ 'irsync', '-r', '-N', '0']
+
+    if verbose:
+        irsync_cmd.append('-v')
+
+    irsync_cmd.append('i:' + source)
+    irsync_cmd.append('i:' + destination)
+
+    try:
+        irsync_proc = Popen(irsync_cmd, stdout=PIPE, stderr=STDOUT)
+    except OSError as e:
+        print('Error running %s: %s' % (' '.join(irsync_cmd), e.strerror))
+        return -1
+
+    while irsync_proc.returncode == None:
+        line = irsync_proc.stdout.readline().rstrip('\n')
+        if line:
+            print('IRSYNC OUT: %s' % (line,))
+        irsync_proc.poll()
+
+    return irsync_proc.returncode
+
+
+
+def get_collection_avus(collection, zone, verbose=False):
+    """
+    This function retrieves all the meta-data AVUs for both
+    collections and data objects within a given collection. It
+    returns a dictionary key'ed by pathname that contains a list
+    of the meta-data items for the pathname. 
+
+    Returns the dict on success, and None on error.
+    """
+
+    if not collection:
+        return None
+
+
+    avu_dict = {}
+    
+
+    # AVUs on the top-level collection
+    avu_query = (
+        "select COLL_NAME, META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
+        " where COLL_NAME = '%s'" % (collection,)
+        )
+    output = run_iquest(avu_query, "%s///%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        coll, attr, value, units = line.split('///')
+        if coll not in avu_dict:
+            avu_dict[coll] = []
+        avu_dict[coll].append(['-C', attr, value, units])
+        
+
+    # AVUs on the sub-collections
+    avu_query = (
+        "select COLL_NAME, META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
+        " where COLL_NAME like '%s/%%'" % (collection,)
+        )
+    output = run_iquest(avu_query, "%s///%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        coll, attr, value, units = line.split('///')
+        if coll not in avu_dict:
+            avu_dict[coll] = []
+        avu_dict[coll].append(['-C', attr, value, units])
+        
+
+    # AVUs on the data objects in the top collection
+    avu_query = (
+        "select COLL_NAME, DATA_NAME, META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
+        " where COLL_NAME = '%s'" % (collection,)
+        )
+    output = run_iquest(avu_query, "%s/%s///%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        obj, attr, value, units = line.split('///')
+        if obj not in avu_dict:
+            avu_dict[obj] = []
+        avu_dict[obj].append(['-d', attr, value, units])
+
+
+    # AVUs on the data objects in all sub-collections
+    avu_query = (
+        "select COLL_NAME, DATA_NAME, META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
+        " where COLL_NAME like '%s/%%'" % (collection,)
+        )
+    output = run_iquest(avu_query, "%s/%s///%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        obj, attr, value, units = line.split('///')
+        if obj not in avu_dict:
+            avu_dict[obj] = []
+        avu_dict[obj].append(['-d', attr, value, units])
+
+
+    return avu_dict
+
+
+
+def get_collection_acls(collection, zone, verbose=False):
+    """
+    This function retrieves all the ACLs for both collections
+    and data objects within a given collection. It returns a
+    dictionary key'ed by pathname that contains a list of the ACLs
+    of interest for the pathname. An ACL of interest is one that
+    is portable across IDS zones, so any username from the
+    'incf' zone, and any group name prefixed with 'ids-'.
+
+    Returns the dict on success, and None on error.
+    """
+
+    if not collection:
+        return None
+
+
+    acl_dict = {}
+
+
+    # ACLs on the top-level collection
+    acl_query = (
+        "select COLL_NAME, COLL_ACCESS_NAME, COLL_ACCESS_USER_ID"
+        " where COLL_NAME = '%s'" % (collection,)
+        )
+    output = run_iquest(acl_query, "%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        coll, access, user_id = line.split('///')
+
+        user_name = irods_id_to_user(user_id, zone, verbose)
+
+        if (not user_name.endswith('#incf')
+            and not user_name.startswith('ids-')):
+            # doesn't match our criteria
+            continue
+
+        if access.startswith('read'):
+            access = 'read'
+        elif access.startswith('modify'):
+            access = 'write'
+
+        if coll not in acl_dict:
+            acl_dict[coll] = []
+        acl_dict[coll].append([user_name, access])
+
+
+    # ACLs on collections below top-level
+    acl_query = (
+        "select COLL_NAME, COLL_ACCESS_NAME, COLL_ACCESS_USER_ID"
+        " where COLL_NAME like '%s/%%'" % (collection,)
+        )
+    output = run_iquest(acl_query, "%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        coll, access, user_id = line.split('///')
+
+        user_name = irods_id_to_user(user_id, zone, verbose)
+
+        if (not user_name.endswith('#incf')
+            and not user_name.startswith('ids-')):
+            # doesn't match our criteria
+            continue
+
+        if access.startswith('read'):
+            access = 'read'
+        elif access.startswith('modify'):
+            access = 'write'
+
+        if coll not in acl_dict:
+            acl_dict[coll] = []
+        acl_dict[coll].append([user_name, access])
+
+
+    # ACLs on data objects within the collection
+    acl_query = (
+        "select COLL_NAME, DATA_NAME, DATA_ACCESS_NAME, DATA_ACCESS_USER_ID"
+        " where COLL_NAME like '%s/%%'" % (collection,)
+        )
+    output = run_iquest(acl_query, "%s/%s///%s///%s", zone, verbose)
+    if output == None:
+        return None
+
+    for line in output.splitlines():
+        obj, access, user_id = line.split('///')
+
+        user_name = irods_id_to_user(user_id, zone, verbose)
+
+        if (not user_name.endswith('#incf')
+            and not user_name.startswith('ids-')):
+            # doesn't match our criteria
+            continue
+
+        if access.startswith('read'):
+            access = 'read'
+        elif access.startswith('modify'):
+            access = 'write'
+            
+        if obj not in acl_dict:
+            acl_dict[obj] = []
+        acl_dict[obj].append([user_name, access])
+
+
+    return acl_dict
+
+
+    
+def set_collection_acls(target, source, source_acls, verbose=False):
+    """
+    This function is used to set ACLs on all the collections
+    and data objects within a target collection based on the
+    ACLs from a source collection. The source ACLs are provided
+    within a dict keyed by source file name. The function needs
+    to transform the source name to a target name and pass
+    the target name and ACL list to irods_setacls.
+
+    Returns 0 on success, and non-zero on error.
+    """
+    if not target or not source or not source_acls:
+        return 1
+
+    # need this to transform ACLs for ids-* groups
+    # to the target zone
+    target_zone = target[1:target.find('/', 1)]
+    
+    for spath in source_acls:
+        acl_list = []
+        for acl in source_acls[spath]:
+            if acl[0].startswith('ids-'):
+                group, zone = acl[0].split('#')
+                user = '%s#%s' % (group, target_zone)
+            else:
+                user = acl[0]
+            acl_list.append([user, acl[1]])
+            
+        tpath = spath.replace(source, target)
+        if irods_setacls(tpath, acl_list, verbose):
+            print('Error setting ACLs on %s' % (tpath,))
+
+    return 0
+
+
+
+def set_collection_avus(target, source, source_avus, verbose=False):
+    """
+    This function is used to set meta-data on all the data
+    objects and sub-collections within the given target collection
+    based on the meta-data from the source collection (as provided
+    within the source_avus dict). The function will transform the
+    source path to a target name and then call the iRODS imeta
+    command to add the meta-data items.
+
+    Returns 0 on success, and non-zero on error.
+    """
+    if not target or not source or not source_avus:
+        return 1
+
+    for spath in source_avus:
+        tpath = spath.replace(source, target)
+        if irods_setavus(tpath, source_avus[spath], verbose):
+            print('Error setting AVUs on %s' % (tpath,))
+
+    return 0
+
+
+            
+def set_policy_avus(source, source_avus, verbose=False):
+    """
+    This function updates the source_avus has to add IDS policy
+    required meta-data that should be applied to each destination
+    file. At this time, required meta-data is:
+
+    - idsadm:primaryCopyLocation - location from which the target
+          has been copied from.
+
+    For all required meta-data, we'll check whether the item is
+    defined already, and if not, we'll set it appropriately.
+
+    Returns 0 on success, non-zero on error.
+    """
+    if not source or not source_avus:
+        return 1
+
+
+    # get a list of source collections and objects
+    
+    ils_cmd = ['ils', '-r', source]
+    (rc, output) = shell_command(ils_cmd)
+    if rc != 0:
+        if verbose:
+            print('Error running ils on %s. Error is:' % (source,))
+            print(output[1])
+        return 1
+
+
+    # iterate through all the source items, checking if they
+    # have the required meta-data set. If not, set it properly
+    
+    coll = None
+    pathname = None
+    for line in output[0].splitlines():
+        if line.startswith('  C-'):
+            continue
+
+        if line[0] == '/':
+            # a collection
+            coll = line[:line.rfind(':')]
+            pathname = coll
+        else:
+            # a data object
+            pathname = coll + '/' + line.strip()
+
+        if pathname in source_avus:
+            attr_list = [avu[1] for avu in source_avus[pathname]]
+            if 'idsadm:primaryCopyLocation' in attr_list:
+                continue
+        else:
+            source_avus[pathname] = []
+
+        if pathname == coll:
+            source_avus[pathname].append(['-C', 'idsadm:primaryCopyLocation', pathname, ''])
+        else:
+            source_avus[pathname].append(['-d', 'idsadm:primaryCopyLocation', pathname, ''])
+
+            
+    return 0
+        
+    
+    
+if __name__ == '__main__':
+
+    # parse and validate options and arguments
+    parser = argparse.ArgumentParser(description='copy an iRODS collection between zones')
+    parser.add_argument('source',
+                        help='iRODS path of the source collection')
+    parser.add_argument('destination',
+                        help='iRODS path of the destination collection')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='show extra progress messages')
+    args = parser.parse_args()
+    
+
+    # validate the source and destination collection arguments
+    
+    spath = args.source.rstrip('/')
+    idx = spath.find('/', 1)
+    if spath[0] != '/' or idx == -1:
+        print('Source collection must be an absolute path like \'/zone/path\'.')
+        sys.exit(1)
+    szone = spath[1:idx]
+
+    dpath = args.destination.rstrip('/')
+    idx = dpath.find('/', 1)
+    if dpath[0] != '/' or idx == -1:
+        print('Destination collection must be an absolute path like \'/zone/path\'.')
+        sys.exit(1)
+    dzone = dpath[1:idx]
+
+    if szone == dzone:
+        print('Source and destination paths are located in the same iRODS zone.')
+        print('ids-copy-dataset can only be used to copy datasets between zones.')
+        print('Use irepl to make data replicas within a zone.')
+        sys.exit(1)
+        
+    if irods_coll_exists(spath, args.verbose) != 1:
+        print('Source collection does not exist, or could not look it up.')
+        sys.exit(1)
+        
+
+    # collect the source ACL information
+    print('Retrieving ACLs from source %s...' % (spath,))
+    source_acls = get_collection_acls(spath, szone, args.verbose)
+    if not source_acls:
+        print('Could not retrieve ACLs from the source.')
+        sys.exit(1)
+
+
+    # collect the source meta-data information
+    print('Retrieving meta-data from source %s...' % (spath,))
+    source_avus = get_collection_avus(spath, szone, args.verbose)
+    if not source_avus:
+        print('No AVUs defined on objects within the collection.')
+
+
+    # Set meta-data required by the IDS Policy
+    print('Setting required meta-data for destination items...')
+    if set_policy_avus(spath, source_avus, args.verbose):
+        print('There was an error setting required meta-data.')
+        sys.exit(1)
+        
+        
+    # perform the data copy with irsync
+    print('Copying data from %s to %s...' % (spath, dpath))
+    if run_irsync(spath, dpath, args.verbose):
+        print('There was an error while copying data. Exiting.')
+        sys.exit(1)
+
+
+    # apply the source ACLs to the destination
+    print('Updating ACLs on destination %s...' % (dpath,))
+    if set_collection_acls(dpath, spath, source_acls, args.verbose):
+        print('There was an error setting destination ACLs.')
+        sys.exit(1)
+
+
+    # apply the source meta-data to the destination
+    print('Adding meta-data to destination %s...' % (dpath,))
+    if set_collection_avus(dpath, spath, source_avus, args.verbose):
+        print('There was an error adding destination meta-data.')
+        sys.exit(1)
+
+
+    print('Successfully copied %s to %s.' % (spath, dpath))
+    sys.exit(0)

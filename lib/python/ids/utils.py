@@ -57,8 +57,12 @@ def run_iquest(query, format=None, zone=None, verbose=False):
                   % (' '.join(command), rc))
             print output[1]
         return None
-    
-    return output[0]
+
+    # get rid of 'Zone is X' first line
+    if zone:
+        return output[0][(output[0].find('\n')+1):]
+    else:
+        return output[0]
 
 
 

@@ -296,7 +296,7 @@ def setup_namespace(zone, org, verbose=False):
     # listed ACLs:
     #
     # top-level/private       - organizational group read ACL
-    # top-level/shared        - no default ACL
+    # top-level/shared        - 'ids-user' gets read ACL
     # top-level/shared/public - 'ids-user' gets read ACL
     #
 
@@ -316,7 +316,21 @@ def setup_namespace(zone, org, verbose=False):
         if rc:
             return rc
 
-    # shared/public (will create 'shared')
+    # shared
+    path = os.path.join(path_prefix, 'shared')
+    if verbose:
+        print('  creating collection %s' % (path,))
+    rc = irods_mkdir(path, verbose)
+    if rc:
+        return rc
+    acl_list = [ ['ids-user#%s' % (zone,), 'read'], ]
+    if verbose:
+        print('  setting default ACLs on %s' % (path,))
+    rc = irods_setacls(path, acl_list, verbose)
+    if rc:
+        return rc
+
+    # shared/public
     path = os.path.join(path_prefix, 'shared', 'public')
     if verbose:
         print('  creating collection %s' % (path,))

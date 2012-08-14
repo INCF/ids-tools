@@ -277,14 +277,14 @@ def setup_namespace(zone, org, verbose=False):
 
 
     # top-level '/zone/organization' collection.
-    # organizational group gets 'read' ACL
+    # 'ids-user' gets read ACL so browsing can work
     if org:
         if verbose:
             print('  creating collection %s' % (path_prefix,))
         rc = irods_mkdir(path_prefix, verbose)
         if rc:
             return rc
-        acl_list = [ [org_group, 'read'], ]
+        acl_list = [ ['ids-user#%s' % (zone,), 'read'], ]
         if verbose:
             print('  setting default ACLs on %s' % (path_prefix,))
         rc = irods_setacls(path_prefix, acl_list, verbose)

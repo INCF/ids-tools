@@ -1,0 +1,85 @@
+#!/usr/bin/python
+# -*- python -*-
+
+import sys
+import argparse
+import os
+import errno
+import subprocess
+
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='set up IDS user environment for iRODS CLI')
+    parser.add_argument('--username', '-u',
+                        help='INCF username')
+    parser.add_argument('--reconfig', '-r', action='store_true',
+                        help='Force re-configuration')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='print extra progress messages')
+    args = parser.parse_args()
+
+
+    # set up the $HOME/.irods directory
+    irods_dir = os.path.join(os.getenv('HOME'), '.irods')
+    try:
+        os.mkdir(irods_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            print('Could not create directory %s: %s'
+                  % (irods_dir, e.strerror))
+            sys.exit(1)
+
+
+    # check if $HOME/.irods/.irodsEnv exists. If so, only
+    # continue if the 'reconfig' option was set.
+    irods_file = os.path.join(irods_dir, '.irodsEnv')
+    if os.path.exists(irods_file):
+        if args.reconfig:
+            try:
+                os.rename(irods_file, irods_file + '.bak')
+            except OSError as e:
+                print('Could not back up %s: %s'
+                      % (irods_file, e.strerror))
+                sys.exit(1)
+        else:
+            print('%s already exists. No configuration needed.'
+                  % (irods_file,))
+            sys.exit(0)
+
+
+    # create a new .irodsEnv configuration file
+
+    user_name = None
+    while not user_name:
+        user_name = raw_input('What is your INCF username? ')
+        if not user_name:
+            print('You must provide your username to continue IDS configuration.')
+
+    irods_config = (
+        "irodsHost ids.incf.org\n"
+        "irodsPort 1247\n"
+        "irodsZone incf\n"
+        "irodsUserName %s\n"
+        "irodsCwd /\n"
+        "#irodsAuthScheme PAM\n"
+        )
+
+    try:
+        f = open(irods_file, 'w')
+        f.write(irods_config % (user_name,))
+        f.close()
+    except IOError as e:
+        print('Could not write configuration to %s: %s' % (irods_file, e.strerror))
+        sys.exit(1)
+
+
+    # run iinit to authenticate the user and stash the password
+    iinit_cmd = ['iinit',]
+    if args.verbose:
+        iinit_cmd.append('-v')
+    subprocess.call(iinit_cmd)
+    
+
+    sys.exit(0)

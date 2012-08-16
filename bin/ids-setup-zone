@@ -28,8 +28,6 @@ if __name__ == '__main__':
                       help="username to connect to the database instance (default is the same as irodsuser)")
     parser.add_option('--dbpass', dest='db_pass',
                       help="password to connect to the database instance (default is the same as irodspass)")
-    parser.add_option('--icat-tablespace', dest='icat_tablespace',
-                      help="path to use as a tablespace for the ICAT database")
     parser.add_option('--install-db', dest='installdb', action='store_true', default=False,
                       help="install Postgres and create the ICAT database")
 
@@ -112,8 +110,6 @@ if __name__ == '__main__':
     env_var_list.append('db_user=%s' % (options.db_user,))
     env_var_list.append('db_pass=%s' % (options.db_pass,))
     env_var_list.append('templates=%s' % (options.templates,))
-    if options.icat_tablespace:
-        env_var_list.append('icat_tablespace=%s' % (options.icat_tablespace,))
     if options.fabuser:
         env_var_list.append('user=%s' % (options.fabuser,))
         

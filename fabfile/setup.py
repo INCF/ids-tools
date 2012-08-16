@@ -37,25 +37,6 @@ def install_packages(is_icat=False):
 def create_icat_db():
     execute(create_tmpdir)
 
-    # if the postgres version is 9.1 or above, need
-    # to update some of the configuration
-    pg_version = sudo("dpkg-query -W -f '${Version}' postgresql")
-    m = re.match(r'^(\d+)\.(\d+)(.*)$', pg_version)
-    if m:
-        major = int(m.group(1))
-        minor = int(m.group(2))
-        if major >= 9 and minor >= 1:
-            # need to update config
-            pg_config = '/etc/postgresql/%d.%d/main/postgresql.conf' % (major, minor)
-            uncomment(pg_config,
-                      'standard_conforming_strings = on',
-                      use_sudo=True)
-            sed(pg_config,
-                'standard_conforming_strings = on',
-                'standard_conforming_strings = off',
-                use_sudo=True)
-            sudo('service postgresql restart')
-    
     # install Postgres's ODBC driver in the system /etc/odbcinst.ini
     # sed part makes sure connection logging is turned off
     sudo('rm -f /etc/odbcinst.ini')
@@ -63,28 +44,19 @@ def create_icat_db():
          % (odbc_driver_file,))
 
     # set up the ICAT database and user
-    sudo('createuser -e -SDRl %s' % (env.db_user,), 
-         user='postgres')
+    sudo('createuser -e -SDRl %s'
+         % (env.db_user,), user='postgres')
     sudo('psql -c "ALTER ROLE %s ENCRYPTED PASSWORD \'%s\'"'
-         % (env.db_user, env.db_pass), 
-         user='postgres')
+         % (env.db_user, env.db_pass), user='postgres')
 
-    # if given, set up a tablespace for the ICAT DB, and set the db_user to own it
-    if env.icat_tablespace and exists(env.icat_tablespace):
-        tname = os.path.basename(env.icat_tablespace)
-        sudo('chown postgres:postgres %s' % (env.icat_tablespace,))
-        sudo('psql -c "CREATE TABLESPACE %s OWNER %s LOCATION \'%s\'"'
-             % (tname, env.db_user, env.icat_tablespace),
-             user='postgres')
-        sudo('psql -c "ALTER USER %s SET default_tablespace = \'%s\'"'
-             % (env.db_user, tname),
-            user='postgres')
-        
     # use template0 so we can specify C collation for irods
     sudo('createdb --lc-collate=C -T template0 -e -O %s %s'
-         % (env.db_user, env.db_name),
-         user='postgres')
+         % (env.db_user, env.db_name), user='postgres')
 
+    # modify some database settings
+    sudo('psql -c "ALTER DATABASE %s SET standard_conforming_strings TO off"'
+         % (env.db_name,), user='postgres')
+    
     # set up the ODBC DSN
     odbc_ini = os.path.join(env.tmpdir, 'odbc.ini')
     upload_template(os.path.join(env.templates, 'odbc.ini.tmpl'),
@@ -165,6 +137,10 @@ def setup_icat():
     # sets up the initial zone namespace
     upload_template(os.path.join(env.templates, 'irodsBootEnv.tmpl'),
                     '%s/.irodsBootEnv' % (env.tmpdir,), context=env)
+    # this is used to set up a "specific query" that results in a
+    # compact ACL display for collections when using 'ils -A'
+    upload_template(os.path.join(env.templates, 'compact_ils_sq.tmpl'),
+                    '%s/compact_ils_sq' % (env.tmpdir,), context=env)
     with prefix('. %s/.irodsBootEnv' % (env.tmpdir,)):
         run('iinit RODS')
         run('imkdir /%s' % (env.irods_zone,))
@@ -180,8 +156,10 @@ def setup_icat():
         run('ichmod own %s /%s/trash' % (env.irods_user, env.irods_zone))
         run('ichmod own %s /%s/trash/home' % (env.irods_user, env.irods_zone))
         run('ichmod read public /')
-        run('ichmod read public /%s' % (env.irods_zone, ))
+        run('ichmod read public /%s' % (env.irods_zone,))
+        run('ichmod read public /%s/home' % (env.irods_zone,))
         run('iadmin moduser rodsBoot password %s' % (env.irods_pass,))
+        run('iadmin < %s/compact_ils_sq' % (env.tmpdir,))
 
 
 @task

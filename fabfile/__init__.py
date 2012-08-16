@@ -25,5 +25,3 @@ def setup_zone():
     execute(setup.setup_icat)
     execute(setup.setup_root_irodsenv)
     execute(setup.clean_tmpdir)
-
-

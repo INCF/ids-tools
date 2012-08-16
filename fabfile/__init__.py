@@ -13,7 +13,6 @@ def setup_ds():
     execute(setup.setup_root_irodsenv)
     execute(setup.clean_tmpdir)
     
-
 @task
 def setup_zone():
     execute(manage.get_server_info)

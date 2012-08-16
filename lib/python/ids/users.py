@@ -138,7 +138,7 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
     synchronization stage is being performed.
     """
 
-    if not source_groups or not dest_groups:
+    if not source_groups or dest_groups == None:
         return None
 
     # remove groups locally that don't exist in IDS

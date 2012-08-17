@@ -271,9 +271,11 @@ def setup_namespace(zone, org, verbose=False):
     if org:
         path_prefix = os.path.join('/', zone, org)
         org_group = 'ids-%s#%s' % (org, zone)
+        org_user = '%s#%s' % (org, zone)
     else:
         path_prefix = os.path.join('/', zone)
         org_group = None
+        org_user = None
 
 
     # top-level '/zone/organization' collection.
@@ -284,7 +286,7 @@ def setup_namespace(zone, org, verbose=False):
         rc = irods_mkdir(path_prefix, verbose)
         if rc:
             return rc
-        acl_list = [ ['ids-user#%s' % (zone,), 'read'], ]
+        acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
         if verbose:
             print('  setting default ACLs on %s' % (path_prefix,))
         rc = irods_setacls(path_prefix, acl_list, verbose)
@@ -309,7 +311,7 @@ def setup_namespace(zone, org, verbose=False):
         return rc
     if org:
         # won't add this ACL if we're doing /zone/private
-        acl_list = [ [org_group, 'read'], ]
+        acl_list = [[org_group, 'read'], [org_user, 'own']]
         if verbose:
             print('  setting default ACLs on %s' % (path,))
         rc = irods_setacls(path, acl_list, verbose)
@@ -323,7 +325,7 @@ def setup_namespace(zone, org, verbose=False):
     rc = irods_mkdir(path, verbose)
     if rc:
         return rc
-    acl_list = [ ['ids-user#%s' % (zone,), 'read'], ]
+    acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
     if verbose:
         print('  setting default ACLs on %s' % (path,))
     rc = irods_setacls(path, acl_list, verbose)
@@ -337,7 +339,7 @@ def setup_namespace(zone, org, verbose=False):
     rc = irods_mkdir(path, verbose)
     if rc:
         return rc
-    acl_list = [ ['ids-user#%s' % (zone,), 'read'], ]
+    acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
     if verbose:
         print('  setting default ACLs on %s' % (path,))
     rc = irods_setacls(path, acl_list, verbose)

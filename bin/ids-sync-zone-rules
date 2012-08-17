@@ -19,6 +19,8 @@ if __name__ == '__main__':
     parser.add_option('--apply-only', action='store_true',
                       dest='apply', default=False,
                       help='only pull rules from DB and apply locally')
+    parser.add_option('--host', dest='host',
+                      help='only apply the rules on the given host')
     parser.add_option('--force', action='store_true',
                       dest='force', default=False,
                       help='force the re-load of the source rule file')
@@ -32,8 +34,12 @@ if __name__ == '__main__':
     if options.apply:
         if options.verbose:
             print('Populating local rules file from ICAT')
-        rc = subprocess.call(["irule", "-F",
-                              os.path.join(rules_dir, "ids-apply-rules.r")])
+        irule_cmd = ['irule', '-F',
+                     os.path.join(rules_dir, 'ids-apply-rules.r')]
+        if options.host:
+            irule_cmd.append('-s')
+            irule_cmd.append('*rloc=%s' % (options.host,))
+        rc = subprocess.call(irule_cmd)
         if not rc:
             # this forces the irodsReServer to re-read the rule base
             os.utime(core_rule_file, None)

@@ -122,7 +122,13 @@ def configure_irods(is_icat=False):
                     context=env, use_sudo=True, mode=0644)
     sudo('chown irods:irods /etc/irods/server.env*')
 
-    # set up the server's credentials if an ICAT
+    env.irods_short_hostname = env.irods_host.split('.')[0]
+    upload_template(os.path.join(env.templates, 'irodsHost.tmpl'),
+                    '/etc/irods/irodsHost',
+                    context=env, use_sudo=True, mode=0644)
+    sudo('chown irods:irods /etc/irods/irodsHost')
+
+    # set up the server's credentials
     with settings(hide('running', 'stdout', 'stderr'), warn_only=True):
         with prefix('. /etc/irods/server.env'):
             sudo('iinit %s' % (env.irods_pass,), user='irods')

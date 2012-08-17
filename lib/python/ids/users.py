@@ -180,6 +180,7 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
                 if verbose:
                     print('\terror adding new group %s' % (group,))
             else:
+                dest_groups[group] = []
                 if verbose:
                     print('\tadded new group %s' % (group,))
 

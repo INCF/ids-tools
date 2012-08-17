@@ -12,6 +12,8 @@ def setup_ds():
     execute(manage.start_irods)
     execute(setup.setup_root_irodsenv)
     execute(setup.clean_tmpdir)
+    if env.vault_path:
+        execute(manage.add_resource)
     
 @task
 def setup_zone():

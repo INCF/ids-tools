@@ -28,8 +28,6 @@ if __name__ == '__main__':
                       help="username to connect to the database instance (default is the same as irodsuser)")
     parser.add_option('--dbpass', dest='db_pass',
                       help="password to connect to the database instance (default is the same as irodspass)")
-    parser.add_option('--install-db', dest='installdb', action='store_true', default=False,
-                      help="install Postgres and create the ICAT database")
 
     parser.add_option('--fabuser', dest='fabuser',
                       help="user to connect to remote machine as. Default is calling user.")

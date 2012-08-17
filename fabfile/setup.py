@@ -8,7 +8,7 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 
 
 # where to download the irods packages from
-apt_sources = 'incf.list'
+apt_sources = 'dbio.list'
 apt_key_url = 'http://apt-dbio-west.s3.amazonaws.com/pubkey.gpg'
 
 
@@ -159,7 +159,6 @@ def setup_icat():
         run('ichmod read public /%s' % (env.irods_zone,))
         run('ichmod read public /%s/home' % (env.irods_zone,))
         run('iadmin moduser rodsBoot password %s' % (env.irods_pass,))
-        run('iadmin < %s/compact_ils_sq' % (env.tmpdir,))
 
 
 @task

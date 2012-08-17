@@ -5,8 +5,6 @@ well as functions for retrieving lists of users and groups
 from both iRODS and LDAP that conform to IDS naming policies.
 """
 
-import ldap
-
 from ids.utils import run_iquest, run_iadmin, get_local_zone
 
 
@@ -22,6 +20,8 @@ user_id_cache = {}
 
 
 def connect_to_directory(ldap_server):
+
+    import ldap
 
     if not ldap_server:
         return None
@@ -45,6 +45,9 @@ def do_ldap_search(connection, search_base, filter, attributes):
 
     returns a list of search results, or None if some error
     """
+
+    import ldap
+    
     try:
         results = connection.search_s(search_base,
                                       ldap.SCOPE_SUBTREE,
@@ -61,6 +64,8 @@ def do_ldap_search(connection, search_base, filter, attributes):
 
 def get_ldap_group_membership():
 
+    import ldap
+    
     ldap_server = 'ldap://ldap.incf.org'
     search_base = 'ou=groups,dc=incf,dc=org'
     

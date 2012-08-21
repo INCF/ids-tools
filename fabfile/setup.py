@@ -122,6 +122,8 @@ def configure_irods(is_icat=False):
                     context=env, use_sudo=True, mode=0644)
     sudo('chown irods:irods /etc/irods/server.env*')
 
+    if is_icat:
+        env.irods_host = env.icat_host
     env.irods_short_hostname = env.irods_host.split('.')[0]
     upload_template(os.path.join(env.templates, 'irodsHost.tmpl'),
                     '/etc/irods/irodsHost',

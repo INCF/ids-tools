@@ -6,11 +6,14 @@ import sys
 import os
 import subprocess
 
+import ids.rules
+
 ids_rule_file = '/etc/irods/reConfigs/ids.re'
 ids_rule_src = '/etc/irods/reConfigs/ids-src.re'
 core_rule_file = '/etc/irods/reConfigs/core.re'
 
-rules_dir = os.path.abspath(os.path.join(os.path.dirname(sys.argv[0]), "../lib/rules"))
+#rules_dir = os.path.abspath(os.path.join(os.path.dirname(sys.argv[0]), "../lib/rules"))
+rules_dir = os.path.dirname(os.path.abspath(ids.rules.__file__))
 
 
 if __name__ == '__main__':

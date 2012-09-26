@@ -1,4 +1,0 @@
-# distributed bio repo
-deb http://apt-dbio-west.s3.amazonaws.com/ubuntu precise main
-deb-src http://apt-dbio-west.s3.amazonaws.com/ubuntu precise main
-

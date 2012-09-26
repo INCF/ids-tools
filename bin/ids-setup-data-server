@@ -8,6 +8,10 @@ import readline
 import getpass
 import socket
 import subprocess
+import fabric.network
+from fabric.api import env, execute
+
+import ids.fabfile
 
 if __name__ == '__main__':
 
@@ -104,37 +108,27 @@ if __name__ == '__main__':
         print('Warning: adding data server without any defined storage location.')
         
 
-    # find the fab files
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if not options.fabfile:
-        options.fabfile = os.path.abspath(os.path.join(script_dir, '../fabfile'))
-    if not options.templates:
-        options.templates = os.path.abspath(os.path.join(script_dir, '../templates'))
-
-
-    # set up the fab command-line and run it
-    env_var_list = []
-    env_var_list.append('irods_zone=%s' % (options.irods_zone,))
-    env_var_list.append('icat_host=%s' % (options.icat_host,))
-    env_var_list.append('irods_host=%s' % (options.irods_host,))
-    env_var_list.append('irods_user=%s' % (options.irods_user,))
-    env_var_list.append('irods_pass=%s' % (options.irods_pass,))
-    env_var_list.append('templates=%s' % (options.templates,))
-    if options.vault_path:
-        env_var_list.append('vault_path=%s' % (options.vault_path,))
-        env_var_list.append('resc_name=%s' % (options.resc_name,))
+    # set up the fabric environment 
+    env.irods_zone = options.irods_zone
+    env.icat_host = options.icat_host
+    env.irods_host = options.irods_host
+    env.irods_user = options.irods_user
+    env.irods_pass = options.irods_pass
     if options.fabuser:
-        env_var_list.append('user=%s' % (options.fabuser,))
+        env.user = options.fabuser
 
-    fab_cmd = ['fab', '-f', options.fabfile,
-               '-H', options.irods_host,
-               '--set', ','.join(env_var_list)]
-    fab_cmd.append('setup_ds')
-    if options.vault_path:
-        fab_cmd.append('manage.add_resource')
-    
-    ret_code = subprocess.call(fab_cmd)
+    env.hosts = [ options.irods_host, ]
 
-    sys.exit(ret_code)
+    try:
+        execute(ids.fabfile.setup_ds)
+        if options.vault_path:
+            env.vault_path = options.vault_path
+            env.resc_name = options.resc_name
+            execute(ids.fabfile.manage.add_resource)
+    finally:
+        fabric.network.disconnect_all()
+
+    sys.exit(0)
+
     
 

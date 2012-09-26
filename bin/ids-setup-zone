@@ -8,6 +8,10 @@ import readline
 import getpass
 import socket
 import subprocess
+import fabric.network
+from fabric.api import env, execute
+
+import ids.fabfile
 
 if __name__ == '__main__':
 
@@ -89,36 +93,23 @@ if __name__ == '__main__':
         options.icat_host = socket.getfqdn()
 
 
-    # find the fab files
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if not options.fabfile:
-        options.fabfile = os.path.abspath(os.path.join(script_dir, '../fabfile'))
-    if not options.templates:
-        options.templates = os.path.abspath(os.path.join(script_dir, '../templates'))
-
-
-    # set up the fab command-line and run it
-    env_var_list = []
-    env_var_list.append('irods_zone=%s' % (options.irods_zone,))
-    env_var_list.append('icat_host=%s' % (options.icat_host,))
-    env_var_list.append('irods_user=%s' % (options.irods_user,))
-    env_var_list.append('irods_pass=%s' % (options.irods_pass,))
-    env_var_list.append('db_name=%s' % (options.db_name,))
-    env_var_list.append('db_host=%s' % (options.db_host,))
-    env_var_list.append('db_user=%s' % (options.db_user,))
-    env_var_list.append('db_pass=%s' % (options.db_pass,))
-    env_var_list.append('templates=%s' % (options.templates,))
+    # set up the fabric environment 
+    env.irods_zone = options.irods_zone
+    env.icat_host = options.icat_host
+    env.irods_user = options.irods_user
+    env.irods_pass = options.irods_pass
+    env.db_name = options.db_name
+    env.db_host = options.db_host
+    env.db_user = options.db_user
+    env.db_pass = options.db_pass
     if options.fabuser:
-        env_var_list.append('user=%s' % (options.fabuser,))
-        
+        env.user = options.fabuser
 
-    fab_cmd = ['fab', '-f', options.fabfile,
-               '-H', options.icat_host,
-               '--set', ','.join(env_var_list)]
-    fab_cmd.append('setup_zone')
+    env.hosts = [ options.icat_host, ]
 
-    ret_code = subprocess.call(fab_cmd)
-    
-    sys.exit(ret_code)
-    
+    try:
+        execute(ids.fabfile.setup_zone)
+    finally:
+        fabric.network.disconnect_all()
 
+    sys.exit(0)

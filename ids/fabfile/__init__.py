@@ -1,6 +1,7 @@
+from fabric.api import env, task, execute
+
 import setup
 import manage
-from fabric.api import env, task, execute
 
 env.use_ssh_config = True
 

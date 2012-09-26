@@ -2,6 +2,7 @@ import os
 import string
 import random
 import re
+from pkg_resources import resource_filename
 
 from fabric.api import *
 from fabric.contrib.files import upload_template, sed, uncomment, exists
@@ -11,12 +12,15 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 apt_sources = 'dbio.list'
 apt_key_url = 'http://apt-dbio-west.s3.amazonaws.com/pubkey.gpg'
 
-
 # misc variables ... you probably don't want to change these
 odbc_driver_file = '/usr/share/psqlodbc/odbcinst.ini.template'
 psql_cmd = "PGPASSWORD=%s psql -h %s -U %s -d %s -f %s"
 irods_default_zone = 'tempZone'
 irods_schema_dir = '/usr/lib/irods/schema'
+
+# template files are kept with the other ids modules
+env.templates = os.path.dirname(resource_filename('ids.fabfile.templates',
+                                                  '__init__.py'))
 
 
 @task

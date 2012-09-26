@@ -1,1 +1,4 @@
 *.pyc
+ids_tools.egg-info
+build/
+dist/

@@ -22,8 +22,9 @@ irods_schema_dir = '/usr/lib/irods/schema'
 @task
 def install_packages(is_icat=False):
     # set up the apt repo for irods packages
-    put(os.path.join(env.templates, '%s.%s' % (apt_sources, env.codename)),
-        '/etc/apt/sources.list.d/incf.list', use_sudo=True)
+    upload_template(os.path.join(env.templates, 'dbio.list.tmpl'),
+                    '/etc/apt/sources.list.d/dbio.list', 
+                    context=env, use_sudo=True, mode=0644)
     sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
     sudo('apt-get -qq update')
 

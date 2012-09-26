@@ -1,0 +1,2 @@
+include ids/rules/*.r
+include ids/fabfile/templates/*.tmpl

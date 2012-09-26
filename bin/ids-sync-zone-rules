@@ -5,15 +5,12 @@ import optparse
 import sys
 import os
 import subprocess
+from pkg_resources import resource_filename
 
-import ids.rules
 
 ids_rule_file = '/etc/irods/reConfigs/ids.re'
 ids_rule_src = '/etc/irods/reConfigs/ids-src.re'
 core_rule_file = '/etc/irods/reConfigs/core.re'
-
-#rules_dir = os.path.abspath(os.path.join(os.path.dirname(sys.argv[0]), "../lib/rules"))
-rules_dir = os.path.dirname(os.path.abspath(ids.rules.__file__))
 
 
 if __name__ == '__main__':
@@ -37,8 +34,8 @@ if __name__ == '__main__':
     if options.apply:
         if options.verbose:
             print('Populating local rules file from ICAT')
-        irule_cmd = ['irule', '-F',
-                     os.path.join(rules_dir, 'ids-apply-rules.r')]
+        rule_file = resource_filename('ids.rules', 'ids-apply-rules.r')
+        irule_cmd = ['irule', '-F', rule_file]
         if options.host:
             irule_cmd.append('-s')
             irule_cmd.append('*rloc=%s' % (options.host,))
@@ -69,16 +66,16 @@ if __name__ == '__main__':
     # store new rule definitions in the database as the new current version
     if options.verbose:
         print('Store new source rules in ICAT')
-    rc = subprocess.call(["irule", "-F",
-                          os.path.join(rules_dir, "ids-store-rules.r")])
+    rule_file = resource_filename('ids.rules', 'ids-store-rules.r')
+    rc = subprocess.call(['irule', '-F', rule_file])
     if rc:
         sys.exit(rc)
 
     # apply new rules locally
     if options.verbose:
         print('Populating local rules file from ICAT')
-    rc = subprocess.call(["irule", "-F",
-                          os.path.join(rules_dir, "ids-apply-rules.r")])
+    rule_file = resource_filename('ids.rules', 'ids-apply-rules.r')
+    rc = subprocess.call(['irule', '-F', rule_file])
     if rc:
         sys.exit(rc)
 
@@ -88,6 +85,6 @@ if __name__ == '__main__':
     if options.verbose:
         print('Push new rules to all zone data servers.')
     # push new rule definitions to all zone data servers
-    rc = subprocess.call(["irule", "-F",
-                          os.path.join(rules_dir, "ids-push-rules.r")])
+    rule_file = resource_filename('ids.rules', 'ids-push-rules.r')
+    rc = subprocess.call(['irule', '-F', rule_file])
     sys.exit(rc)

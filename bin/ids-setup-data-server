@@ -34,10 +34,6 @@ if __name__ == '__main__':
 
     parser.add_option('--fabuser', dest='fabuser',
                       help="user to connect to remote machine as. Default is calling user.")
-    parser.add_option('--fabfile', dest='fabfile',
-                      help="location of the fabfile to use for setup tasks")
-    parser.add_option('--templates', dest='templates',
-                      help="location of configuration file templates for setup tasks")
     parser.add_option('--no-prompt', action='store_false', dest="prompt", default=True,
                       help="don't prompt for parameter values not provided via command-line options")
     options, args = parser.parse_args()

@@ -13,7 +13,7 @@ def setup_ds():
     execute(manage.start_irods)
     execute(setup.setup_root_irodsenv)
     execute(setup.clean_tmpdir)
-    if env.vault_path:
+    if 'vault_path' in env:
         execute(manage.add_resource)
     
 @task

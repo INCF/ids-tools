@@ -23,6 +23,7 @@ setup(name = "ids-tools",
       include_package_data = True,
       install_requires = [
           "python-ldap",
+          "argparse",
           "Fabric"],
       license = "ASL",
       platforms = "Posix; MacOS X",

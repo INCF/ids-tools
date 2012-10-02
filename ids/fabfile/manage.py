@@ -42,7 +42,7 @@ def remove_resource():
 def get_server_info():
     env.remote_hostname = run('hostname')
     distribution = run('lsb_release -i')
-    env.distribution = distribution.split(':')[1].strip('\t')
+    env.distribution = distribution.split(':')[1].strip('\t').lower()
     codename = run('lsb_release -c')
     env.codename = codename.split(':')[1].strip('\t')
 

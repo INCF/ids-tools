@@ -3,7 +3,7 @@
 
 import sys
 import os
-import optparse
+import argparse
 
 from ids.users import get_irods_group, irods_user_exists
 from ids.utils import run_iquest, get_local_zone
@@ -18,8 +18,8 @@ def check_policy_groups(zone, org, verbose=False):
     namespace exist.
 
     Inputs:
-    - 'zone' is the zone namespace to check. Will
-      use the local zone if zone is None.
+    - 'zone' is the zone for the namespace to check.
+      Will use the local zone if zone is None.
     - 'org' is the name of the organization component
       of the namespace to check. If set to None, the
       top-level zone namespace will be checked against
@@ -353,45 +353,43 @@ def setup_namespace(zone, org, verbose=False):
 
 if __name__ == '__main__':
 
-    parser = optparse.OptionParser()
-    parser.add_option('--zone', '-z', dest='zone',
-                      help='name of the zone to root the namespace check in')
-    parser.add_option('--organization', '-o', dest='org',
-                      help='name of organization to check namespace for')
-    parser.add_option('--check', '-c', action='store_true',
-                      dest='check', default=False,
-                      help='check namespace and report compliance against IDS policy')
-    parser.add_option('--verbose', '-v', action='store_true',
-                      dest="verbose", default=False,
-                      help='print progress messages')
-    options, args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Set up or check a portion of the namespace according to IDS policies')
+    parser.add_argument('--zone', '-z',
+                        help='name of the zone to check within')
+    parser.add_argument('--organization', '-o', dest='org',
+                        help='name of organization to check or setup')
+    parser.add_argument('--check', '-c', action='store_true', default=False,
+                        help='check namespace and report compliance against IDS policy')
+    parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                        help='print progress messages')
+    args = parser.parse_args()
 
 
     # if I'm doing a check, turn on verbose reporting
-    if options.check:
-        options.verbose = True
+    if args.check:
+        args.verbose = True
 
 
     # if zone wasn't specified, make it the local zone
-    if not options.zone:
-        options.zone = get_local_zone(options.verbose)
-        if options.zone == None:
+    if not args.zone:
+        args.zone = get_local_zone(args.verbose)
+        if args.zone == None:
             sys.exit(2)
             
 
     # check if needed users/groups exist
-    if options.verbose:
+    if args.verbose:
         print('Checking whether required groups exist...')
-    if not check_policy_groups(options.zone, options.org, options.verbose):
+    if not check_policy_groups(args.zone, args.org, args.verbose):
         print('Some required groups do not exist. Exiting.')
         sys.exit(1)
 
 
     # check the namespace
-    if options.check:
-        (complies, policy_report) = check_namespace_policy(options.zone,
-                                                           options.org,
-                                                           options.verbose)
+    if args.check:
+        (complies, policy_report) = check_namespace_policy(args.zone,
+                                                           args.org,
+                                                           args.verbose)
         if policy_report == None:
             sys.exit(2)
         elif complies:
@@ -402,12 +400,12 @@ if __name__ == '__main__':
 
     # set up the new namespace. If collections already exist according
     # to policy, they won't be removed, but ACLs might be adjusted.
-    if options.verbose:
+    if args.verbose:
         msg_str = 'Creating the IDS namespace for '
-        if options.org:
-            msg_str += 'organization \'%s\' in ' % (options.org,)
-        msg_str += 'zone \'%s\'.' % (options.zone,)
+        if args.org:
+            msg_str += 'organization \'%s\' in ' % (args.org,)
+        msg_str += 'zone \'%s\'.' % (args.zone,)
         print msg_str
 
-    rc = setup_namespace(options.zone, options.org, options.verbose)
+    rc = setup_namespace(args.zone, args.org, args.verbose)
     sys.exit(rc)

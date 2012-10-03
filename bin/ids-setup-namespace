@@ -71,7 +71,7 @@ def check_policy_groups(zone, org, verbose=False):
     
         
         
-def check_namespace_policy(zone, org, verbose=False):
+def check_namespace_policy(zone, prefix, org, verbose=False):
     """
     This function will determine whether the given
     organizational namespace complies with the IDS
@@ -80,6 +80,9 @@ def check_namespace_policy(zone, org, verbose=False):
     Inputs:
     - 'zone' is the zone namespace to check. Will
       use the local zone if zone is None.
+    - 'prefix' is an optional root of the namespace to
+      check within. The first component of prefix must
+      be zone if prefix is provided.
     - 'org' is the name of the organization component
       of the namespace to check. If set to None, the
       top-level zone namespace will be checked against
@@ -103,7 +106,14 @@ def check_namespace_policy(zone, org, verbose=False):
         if not zone:
             return (None, None)
 
-    if org:
+    if prefix and prefix.find('/' + zone) != 0:
+        if verbose:
+            print('Prefix %s not within zone %s' % (prefix, zone))
+        return (None, None)
+
+    if prefix and org:
+        path_prefix = os.path.join(prefix, org)
+    elif org:
         path_prefix = os.path.join('/', zone, org)
     else:
         path_prefix = os.path.join('/', zone)
@@ -204,45 +214,42 @@ def check_namespace_policy(zone, org, verbose=False):
             print('  no required ACLs for %s.' % (path,))
 
 
-    # check 'shared/public'
-    if ns_policy_report[path]['exists']:
-        path = os.path.join(path_prefix, 'shared', 'public')
-        ns_policy_report[path] = {}
-        rc = irods_coll_exists(path, verbose)
-        if rc < 0:
-            return (None, None)
-        elif rc == 0:
+    # check 'public'
+    path = os.path.join(path_prefix, 'public')
+    ns_policy_report[path] = {}
+    rc = irods_coll_exists(path, verbose)
+    if rc < 0:
+        return (None, None)
+    elif rc == 0:
+        if verbose:
+            print('  path %s does not exist.' % (path,))
+        ns_policy_report[path]['exists'] = False
+        complies = False
+    else:
+        if verbose:
+            print('  path %s exists.' % (path,))
+        ns_policy_report[path]['exists'] = True
+        if verbose:
+            print('  checking ACLs on %s.' % (path,))
+        acl_list = irods_coll_getacls(path, verbose)
+        group = 'public#%s' % (zone,)
+        if group in [acl[0] for acl in acl_list]:
             if verbose:
-                print('  path %s does not exist.' % (path,))
-            ns_policy_report[path]['exists'] = False
-            complies = False
+                print('  ACLs correct on %s.' % (path,))
+            ns_policy_report[path]['acl'] = True
         else:
             if verbose:
-                print('  path %s exists.' % (path,))
-            ns_policy_report[path]['exists'] = True
-            if verbose:
-                print('  checking ACLs on %s.' % (path,))
-            acl_list = irods_coll_getacls(path, verbose)
-            group = 'ids-user#%s' % (zone,)
-            if group in [acl[0] for acl in acl_list]:
-                if verbose:
-                    print('  ACLs correct on %s.' % (path,))
-                ns_policy_report[path]['acl'] = True
-            else:
-                if verbose:
-                    print('  no required \'read\' ACLs for ids-user#%s on path %s'
-                          % (zone, path,))
-                ns_policy_report[path]['acl'] = False
-                complies = False
-                
-            
+                print('  no required \'read\' ACLs for %s on path %s'
+                      % (group, path,))
+            ns_policy_report[path]['acl'] = False
+            complies = False
         
 
     return (complies, ns_policy_report)
 
 
 
-def setup_namespace(zone, org, verbose=False):
+def setup_namespace(zone, prefix, org, org_owner, verbose=False):
     """
     This function creates the required IDS namespace
     according to the IDS policy document.
@@ -251,12 +258,18 @@ def setup_namespace(zone, org, verbose=False):
     - 'zone' is the zone namespace element of the
       path to be operated on. If zone is None, the
       local zone name will be used.
+    - 'prefix' is an optional root of the namespace to
+      operate within. The first component of prefix must
+      be zone if prefix is provided.
     - 'org' is the organizational component of the
       path to be operated on. It will be created if
       if doesn't already exist. If org is None, then
       the policy namespace components will be created
       in the top-level zone namespace (this should only
       be done in special cases).
+    - 'org_owner' is an iRODS username who should own
+      the organizational sub-collections. If the user name
+      doesn't include '#', then the provided zone will be used
     - 'verbose' if True, will cause informational
       messages to be printed along the way.
 
@@ -264,29 +277,48 @@ def setup_namespace(zone, org, verbose=False):
     """
 
     # process args
+    if org and not org_owner:
+        if verbose:
+            print('Must provide both organization name and organization owner arguments')
+        return 2
+        
     if not zone:
         zone = get_local_zone(verbose=verbose)
         if not zone:
             return 2
-    if org:
+
+    if prefix and prefix.find('/' + zone) != 0:
+        if verbose:
+            print('Prefix %s not within zone %s' % (prefix, zone))
+        return 2
+
+    if prefix and org:
+        path_prefix = os.path.join(prefix, org)
+    elif org:
         path_prefix = os.path.join('/', zone, org)
-        org_group = 'ids-%s#%s' % (org, zone)
-        org_user = '%s#%s' % (org, zone)
     else:
         path_prefix = os.path.join('/', zone)
+
+    if org:
+        org_group = 'ids-%s#%s' % (org, zone)
+        if org_owner and org_owner.find('#') != -1:
+            org_user = org_owner
+        elif org_owner:
+            org_user = '%s#%s' % (org_owner, zone)
+    else:
         org_group = None
         org_user = None
 
 
-    # top-level '/zone/organization' collection.
-    # 'ids-user' gets read ACL so browsing can work
+    # top-level '/zone/organization' or '/prefix/organization' collection.
+    # 'public' gets read ACL so browsing can work
     if org:
         if verbose:
             print('  creating collection %s' % (path_prefix,))
         rc = irods_mkdir(path_prefix, verbose)
         if rc:
             return rc
-        acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
+        acl_list = [['public#%s' % (zone,), 'read'], [org_user, 'own']]
         if verbose:
             print('  setting default ACLs on %s' % (path_prefix,))
         rc = irods_setacls(path_prefix, acl_list, verbose)
@@ -297,9 +329,9 @@ def setup_namespace(zone, org, verbose=False):
     # The following sub-collections are created, with the
     # listed ACLs:
     #
-    # top-level/private       - organizational group read ACL
-    # top-level/shared        - 'ids-user' gets read ACL
-    # top-level/shared/public - 'ids-user' gets read ACL
+    # top-level/private - organizational group read ACL
+    # top-level/shared  - 'ids-user' gets read ACL
+    # top-level/public  - 'public' gets read ACL
     #
 
     # private
@@ -325,21 +357,25 @@ def setup_namespace(zone, org, verbose=False):
     rc = irods_mkdir(path, verbose)
     if rc:
         return rc
-    acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
+    acl_list = [['ids-user#%s' % (zone,), 'read'],]
+    if org:
+        acl_list.append([org_user, 'own'])
     if verbose:
         print('  setting default ACLs on %s' % (path,))
     rc = irods_setacls(path, acl_list, verbose)
     if rc:
         return rc
 
-    # shared/public
-    path = os.path.join(path_prefix, 'shared', 'public')
+    # public
+    path = os.path.join(path_prefix, 'public')
     if verbose:
         print('  creating collection %s' % (path,))
     rc = irods_mkdir(path, verbose)
     if rc:
         return rc
-    acl_list = [['ids-user#%s' % (zone,), 'read'], [org_user, 'own']]
+    acl_list = [['public#%s' % (zone,), 'read'],]
+    if org:
+        acl_list.append([org_user, 'own'])
     if verbose:
         print('  setting default ACLs on %s' % (path,))
     rc = irods_setacls(path, acl_list, verbose)
@@ -355,9 +391,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Set up or check a portion of the namespace according to IDS policies')
     parser.add_argument('--zone', '-z',
-                        help='name of the zone to check within')
+                        help='name of the zone to operate within')
+    parser.add_argument('--prefix', '-p',
+                        help='prefix pathname to base the namespace check or setup within')
     parser.add_argument('--organization', '-o', dest='org',
                         help='name of organization to check or setup')
+    parser.add_argument('--owner', '-u',
+                        help='user who should own the organization\'s namespace. Either "user" or "user#zone".')
     parser.add_argument('--check', '-c', action='store_true', default=False,
                         help='check namespace and report compliance against IDS policy')
     parser.add_argument('--verbose', '-v', action='store_true', default=False,
@@ -372,7 +412,7 @@ if __name__ == '__main__':
 
     # if zone wasn't specified, make it the local zone
     if not args.zone:
-        args.zone = get_local_zone(args.verbose)
+        args.zone = get_local_zone(verbose=args.verbose)
         if args.zone == None:
             sys.exit(2)
             
@@ -380,7 +420,7 @@ if __name__ == '__main__':
     # check if needed users/groups exist
     if args.verbose:
         print('Checking whether required groups exist...')
-    if not check_policy_groups(args.zone, args.org, args.verbose):
+    if not check_policy_groups(args.zone, args.org, verbose=args.verbose):
         print('Some required groups do not exist. Exiting.')
         sys.exit(1)
 
@@ -388,8 +428,9 @@ if __name__ == '__main__':
     # check the namespace
     if args.check:
         (complies, policy_report) = check_namespace_policy(args.zone,
+                                                           args.prefix,
                                                            args.org,
-                                                           args.verbose)
+                                                           verbose=args.verbose)
         if policy_report == None:
             sys.exit(2)
         elif complies:
@@ -407,5 +448,5 @@ if __name__ == '__main__':
         msg_str += 'zone \'%s\'.' % (args.zone,)
         print msg_str
 
-    rc = setup_namespace(args.zone, args.org, args.verbose)
+    rc = setup_namespace(args.zone, args.prefix, args.org, args.owner, verbose=args.verbose)
     sys.exit(rc)

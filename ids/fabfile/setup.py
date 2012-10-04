@@ -9,7 +9,7 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 
 
 # where to download the irods packages from
-apt_sources = 'dbio.list'
+apt_source_file = 'ids.list'
 apt_key_url = 'http://apt-dbio-west.s3.amazonaws.com/pubkey.gpg'
 
 # misc variables ... you probably don't want to change these
@@ -26,8 +26,8 @@ env.templates = os.path.dirname(resource_filename('ids.fabfile.templates',
 @task
 def install_packages(is_icat=False):
     # set up the apt repo for irods packages
-    upload_template(os.path.join(env.templates, 'dbio.list.tmpl'),
-                    '/etc/apt/sources.list.d/dbio.list', 
+    upload_template(os.path.join(env.templates, apt_source_file + '.tmpl'),
+                    '/etc/apt/sources.list.d/' + apt_source_file, 
                     context=env, use_sudo=True, mode=0644)
     sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
     sudo('apt-get -qq update')

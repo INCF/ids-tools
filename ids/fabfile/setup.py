@@ -10,7 +10,7 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 
 # where to download the irods packages from
 apt_source_file = 'ids.list'
-apt_key_url = 'http://apt-dbio-west.s3.amazonaws.com/pubkey.gpg'
+apt_key_url = 'http://ids-us-east-1.s3.amazonaws.com/pubkey.gpg'
 
 # misc variables ... you probably don't want to change these
 odbc_driver_file = '/usr/share/psqlodbc/odbcinst.ini.template'

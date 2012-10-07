@@ -58,12 +58,12 @@ if __name__ == '__main__':
             print('You must provide your username to continue IDS configuration.')
 
     irods_config = (
-        "irodsHost ids.incf.org\n"
+        "irodsHost ids.incf.net\n"
         "irodsPort 1247\n"
         "irodsZone incf\n"
         "irodsUserName %s\n"
         "irodsCwd /\n"
-        "#irodsAuthScheme PAM\n"
+        "irodsAuthScheme PAM\n"
         )
 
     try:

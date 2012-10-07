@@ -32,8 +32,6 @@ if __name__ == '__main__':
 
     # just generate the latest rule base file from the DB
     if options.apply:
-        if options.verbose:
-            print('Populating local rules file from ICAT')
         rule_file = resource_filename('ids.rules', 'ids-apply-rules.r')
         irule_cmd = ['irule', '-F', rule_file]
         if options.host:
@@ -42,6 +40,12 @@ if __name__ == '__main__':
         rc = subprocess.call(irule_cmd)
         if not rc:
             # this forces the irodsReServer to re-read the rule base
+            if options.verbose:
+                if options.host:
+                    print('Populated rules file on host %s from ICAT'
+                          % (options.host,))
+                else:
+                    print('Populated local rules file from ICAT')
             os.utime(core_rule_file, None)
         sys.exit(rc)
 

@@ -47,6 +47,17 @@ localzone = 'localZone'
 coll_cache = None
 
 
+# Need to make the ixmsg Popen handle global for the signal
+# handler to properly kill the ixmsg process when the script
+# receives a signal to terminate
+ixmsg_proc = None
+
+
+# Need the location of the pidfile so that any signal handlers
+# can remove the file when exiting the script
+pidfile = None
+
+
 # mappings of iRODS rule engine action names to an "event type"
 # (intended to be more human understandable)
 action_to_event = {
@@ -457,11 +468,6 @@ def filter_message(msg):
 
 
 
-# Need to make the ixmsg Popen handle global for the signal
-# handler to properly kill the ixmsg process when the script
-# receives a signal to terminate
-ixmsg_proc = None
-
 def script_cleanup(signal, frame):
     """
     Properly terminate the ixmsg process, as it does
@@ -470,23 +476,34 @@ def script_cleanup(signal, frame):
     if ixmsg_proc:
         ixmsg_proc.terminate()
     print('Caught termination signal. Exiting.')
+    if pidfile:
+        os.remove(pidfile)
     sys.exit(0)
 
 
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Log IDS audit events to files')
-    parser.add_argument('--logdir', '-l',
-                        help='directory where logs are stored')
-    args = parser.parse_args()
-
     # properly clean up on certain signals
     signal.signal(signal.SIGHUP, script_cleanup)
     signal.signal(signal.SIGINT, script_cleanup)
     signal.signal(signal.SIGTERM, script_cleanup)
 
-    
+    # parse command line arguments
+    parser = argparse.ArgumentParser(description='Log IDS audit events to files')
+    parser.add_argument('--logdir', '-l',
+                        help='directory where logs are stored')
+    parser.add_argument('--numevents', '-n', type=int, default=0,
+                        help='exit after processing this many events')
+    args = parser.parse_args()
+
+
+    # numevents needs to be >= 0, with 0 meaning no limit
+    if args.numevents < 0:
+        print('The --numevents argument must be a positive integer.')
+        sys.exit(1)
+        
+
     # Quick sanity check if the log directory exists.
     # We won't create the log directory if it doesn't exist.
     if args.logdir:
@@ -502,10 +519,27 @@ if __name__ == '__main__':
         sys.exit(1)
 
 
+    # create a pid file. If the file exists already, it means that
+    # another logger is running, so this one should exit
+    pidfile = os.path.join(log_dir, ".logger.pid")
+    try:
+        pid_fd = os.open(pidfile, os.WRONLY|os.CREAT|os.EXCL, 0600)
+        os.write(pid_fd, "%d\n" % (os.getpid(),))
+        os.close(pid_fd)
+    except OSError, e:
+        if e.errno == errno.EEXIST:
+            print('Cannot write pidfile. Another logger is probably running. Exiting.')
+            sys.exit(0)
+        else:
+            print('Error opening %s: %s' % (pidfile, e.strerror))
+            sys.exit(1)
+
+    
     # identify the local zone name
     localzone = get_local_zone()
     if not localzone:
         print('Could not retrieve the local zone name.')
+        os.remove(pidfile)
         sys.exit(1)
 
 
@@ -513,6 +547,7 @@ if __name__ == '__main__':
     coll_list = run_iquest('select COLL_NAME', '%s')
     if not coll_list:
         print('List of collections from local zone is empty. Something is wrong!')
+        os.remove(pidfile)
         sys.exit(1)
         
     coll_cache = set()
@@ -524,13 +559,17 @@ if __name__ == '__main__':
         ixmsg_proc = Popen(ixmsg_cmd, stdout=PIPE, stderr=STDOUT)
     except OSError as e:
         print('Error running ixmsg: %s' % (e.strerror,))
+        os.remove(pidfile)
         sys.exit(1)
 
-    
-    while ixmsg_proc.returncode == None:
+    lines = 0
+    while (ixmsg_proc.returncode == None and
+           (args.numevents == 0
+            or lines < args.numevents)):
         # Each line contains one rule engine audit event.
         # Parse the line, and see if it's one we want to look at
         line = ixmsg_proc.stdout.readline().rstrip('\n')
+        lines += 1
         msg = parse_message(line)
         if not msg or not filter_message(msg):
             continue
@@ -553,4 +592,5 @@ if __name__ == '__main__':
         ixmsg_proc.poll()
 
     ixmsg_proc.terminate()
+    os.remove(pidfile)
     sys.exit(0)

@@ -523,7 +523,7 @@ if __name__ == '__main__':
     # another logger is running, so this one should exit
     pidfile = os.path.join(log_dir, ".logger.pid")
     try:
-        pid_fd = os.open(pidfile, os.WRONLY|os.CREAT|os.EXCL, 0600)
+        pid_fd = os.open(pidfile, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0600)
         os.write(pid_fd, "%d\n" % (os.getpid(),))
         os.close(pid_fd)
     except OSError, e:

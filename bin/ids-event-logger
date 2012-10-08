@@ -6,6 +6,7 @@ import sys
 import re
 import signal
 import errno
+import argparse
 from datetime import datetime
 from subprocess import check_output, Popen, PIPE, STDOUT, CalledProcessError
 
@@ -475,6 +476,11 @@ def script_cleanup(signal, frame):
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser(description='Log IDS audit events to files')
+    parser.add_argument('--logdir', '-l',
+                        help='directory where logs are stored')
+    args = parser.parse_args()
+
     # properly clean up on certain signals
     signal.signal(signal.SIGHUP, script_cleanup)
     signal.signal(signal.SIGINT, script_cleanup)
@@ -483,6 +489,9 @@ if __name__ == '__main__':
     
     # Quick sanity check if the log directory exists.
     # We won't create the log directory if it doesn't exist.
+    if args.logdir:
+        log_dir = args.logdir
+        
     if not os.path.isdir(log_dir):
         print('Log directory %s does not exist, or is not a directory.'
               % (log_dir,))

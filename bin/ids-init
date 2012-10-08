@@ -51,10 +51,9 @@ if __name__ == '__main__':
 
     # create a new .irodsEnv configuration file
 
-    user_name = None
-    while not user_name:
-        user_name = raw_input('What is your INCF username? ')
-        if not user_name:
+    while not args.username:
+        args.username = raw_input('What is your INCF username? ')
+        if not args.username:
             print('You must provide your username to continue IDS configuration.')
 
     irods_config = (
@@ -68,7 +67,7 @@ if __name__ == '__main__':
 
     try:
         f = open(irods_file, 'w')
-        f.write(irods_config % (user_name,))
+        f.write(irods_config % (args.username,))
         f.close()
     except IOError as e:
         print('Could not write configuration to %s: %s' % (irods_file, e.strerror))

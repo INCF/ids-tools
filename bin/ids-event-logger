@@ -366,7 +366,8 @@ def process_event(event):
     if event['type'] in event_handlers:
         event_handlers[event['type']](event)
         write_event_log(event)
-        print event_tmpl % event
+        if debug > 0:
+            print event_tmpl % event
     elif debug > 0:
         event['target'] = 'NoTarget'
         event['attributes'] = ''
@@ -391,9 +392,6 @@ def parse_event(msg_header, msg_body):
     """
 
     event = {}
-
-    # until the messages themselves have timestamps, generate here
-    #event['timestamp'] = datetime.utcnow().strftime(iso_8601_fmt)
 
     # parse out the timestamp from the header
     m = re.match(r'iaudit:(.+):.*$', msg_header)
@@ -428,7 +426,7 @@ def parse_message(msg_str):
     Returns the dictionary, or None if the event couldn't
     be parsed.
     """
-    m = re.match(r'(\w+)@(\w+):([\w\.]+):(\d+)#(\d+)::(iaudit:[\w\s]+):(.*)',
+    m = re.match(r'(\w+)@(\w+):(\S+):(\d+)#(\d+)::(iaudit:[\w\.]+:[\w\s]+):(.*)',
                  msg_str)
     if not m:
         return None

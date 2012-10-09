@@ -31,38 +31,6 @@
     },
 
     "Resources" : {
-        "CfnUser" : {
-            "Type" : "AWS::IAM::User",
-            "Properties" : {
-                "Path" : "/",
-                "Policies" : [
-                    {
-                        "PolicyName" : "root",
-                        "PolicyDocument" : { 
-                            "Statement" : [
-                                {
-                                    "Effect" : "Allow",
-                                    "Action" : [
-                                        "cloudformation:DescribeStackResources",
-                                        "cloudformation:DescribeStackResource",
-                                        "cloudformation:DescribeStacks"
-                                    ],
-                                    "Resource" : "*"
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        },
-
-        "HostKeys" : {
-            "Type" : "AWS::IAM::AccessKey",
-            "Properties" : {
-                "UserName" : {"Ref": "CfnUser"}
-            }
-        },
-
         "IDSDataServerInstance" : {
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
@@ -109,21 +77,11 @@
                                 "cp /home/ubuntu/.ssh/authorized_keys /root/.ssh\n",
                                 "cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys\n",
                                 "touch /root/.ssh/config\n",
-                                "grep multiverse /etc/apt/sources.list ",
-                                "| sed 's/^# deb/deb/' ",
-                                "> /etc/apt/sources.list.d/multiverse.list\n",
-                                "apt-add-repository -y ppa:awstools-dev/awstools\n",
                                 "apt-get update\n",
-                                "apt-get -y install python-setuptools",
-                                " python-ldap aws-cloudformation-cli\n",
+                                "apt-get -y install python-setuptools python-ldap\n",
                                 "myname=`hostname`\n",
                                 "myip=`echo $myname | sed -e 's/ip-//' -e 's/-/./g'`\n",
-                                "myeip=`cfn-describe-stack-resource",
-                                " -s ", { "Ref" : "AWS::StackName" }, " -l EIP",
-                                " -I ", { "Ref" : "HostKeys" },
-                                " -S ", { "Fn::GetAtt" : [ "HostKeys", "SecretAccessKey" ] },
-                                " --region ", { "Ref" : "AWS::Region" },
-                                " | awk '{print $3}'`\n",
+                                "myeip=", { "Ref" : "IPAddress" }, "\n",
                                 "myfqdn=`host $myeip | awk '{print $5}' | sed -e 's/.$//'`\n",
                                 "echo $myip $myname $myeip $myfqdn\n",
                                 "easy_install http://ids-us-east-1.s3.amazonaws.com/ids-tools-latest.tar.gz\n",
@@ -164,10 +122,15 @@
             }
         },
 
-        "EIP" : {
-            "Type" : "AWS::EC2::EIP",
+        "IPAddress" : { 
+            "Type" : "AWS::EC2::EIP"
+        },
+
+        "IPAssoc" : {
+            "Type" : "AWS::EC2::EIPAssociation",
             "Properties" : {
-                "InstanceId" : { "Ref" : "IDSDataServerInstance" }
+                "InstanceId" : { "Ref" : "IDSDataServerInstance" },
+                "EIP" : { "Ref" : "IPAddress" }
             }
         },
 

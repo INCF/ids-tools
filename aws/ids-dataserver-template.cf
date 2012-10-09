@@ -1,0 +1,226 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "This template creates an instance suitable to use as an IDS data server.",
+
+    "Parameters" : {
+        "INCFUserName" : {
+            "Description" : "Your user name in the INCF directory",
+            "Type" : "String"
+        },
+        "KeyName" : {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type" : "String"
+        },
+        "DataVolumeSize" : {
+            "Description" : "How large should the attached data volume be in gigabytes.",
+            "Type" : "String"
+        }
+    },
+
+    "Mappings" : {
+        "RegionMap" : {
+            "us-east-1"      : { "AMI" : "ami-137bcf7a", "PrefAz" : "us-east-1a" },
+            "us-west-1"      : { "AMI" : "ami-d70c2892", "PrefAz" : "us-west-1a" },
+            "us-west-2"      : { "AMI" : "ami-1cdd532c", "PrefAz" : "us-west-2a" },
+            "eu-west-1"      : { "AMI" : "ami-db595faf", "PrefAz" : "eu-west-1a" },
+            "sa-east-1"      : { "AMI" : "ami-2e845d33", "PrefAz" : "sa-east-1a" },
+            "ap-southeast-1" : { "AMI" : "ami-eadb9ab8", "PrefAz" : "ap-southeast-1a" },
+            "ap-northeast-1" : { "AMI" : "ami-c047fac1", "PrefAz" : "ap-northeast-1a" }
+        }
+    },
+
+    "Resources" : {
+        "CfnUser" : {
+            "Type" : "AWS::IAM::User",
+            "Properties" : {
+                "Path" : "/",
+                "Policies" : [
+                    {
+                        "PolicyName" : "root",
+                        "PolicyDocument" : { 
+                            "Statement" : [
+                                {
+                                    "Effect" : "Allow",
+                                    "Action" : [
+                                        "cloudformation:DescribeStackResources",
+                                        "cloudformation:DescribeStackResource",
+                                        "cloudformation:DescribeStacks"
+                                    ],
+                                    "Resource" : "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+
+        "HostKeys" : {
+            "Type" : "AWS::IAM::AccessKey",
+            "Properties" : {
+                "UserName" : {"Ref": "CfnUser"}
+            }
+        },
+
+        "IDSDataServerInstance" : {
+            "Type" : "AWS::EC2::Instance",
+            "Properties" : {
+                "AvailabilityZone" : { 
+                    "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "PrefAz" ]
+                },
+                "SecurityGroups" : [ { "Ref" : "IDSSecurityGroup" } ],
+                "KeyName" : { "Ref" : "KeyName" },
+                "InstanceType": "t1.micro",
+                "ImageId" : { 
+                    "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]
+                },
+                "Volumes" : [ 
+                    { 
+                        "VolumeId" : { "Ref" : "DataVolume" },
+                        "Device" : "/dev/sdg"
+                    }
+                ],
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : {
+                            "Fn::Join" : [
+                                "",
+                                [ "ids-user-",
+                                  { "Ref" : "INCFUserName" }
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "UserData" : {
+                    "Fn::Base64" : { 
+                        "Fn::Join" : [ 
+                            "", 
+                            [
+                                "#!/bin/bash\n",
+                                "exec >> /tmp/setup.log 2>&1\n",
+                                "mkdir /srv/irods\n",
+                                "mkfs -t ext4 -m 1 -L vault /dev/xvdg\n",
+                                "echo 'LABEL=vault /srv/irods ext4 defaults,noatime 0 2' >> /etc/fstab\n",
+                                "mount /srv/irods\n",
+                                "ssh-keygen -f /root/.ssh/id_rsa -t rsa -P \"\"\n",
+                                "cp /home/ubuntu/.ssh/authorized_keys /root/.ssh\n",
+                                "cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys\n",
+                                "touch /root/.ssh/config\n",
+                                "grep multiverse /etc/apt/sources.list ",
+                                "| sed 's/^# deb/deb/' ",
+                                "> /etc/apt/sources.list.d/multiverse.list\n",
+                                "apt-add-repository -y ppa:awstools-dev/awstools\n",
+                                "apt-get update\n",
+                                "apt-get -y install python-setuptools",
+                                " python-ldap aws-cloudformation-cli\n",
+                                "myname=`hostname`\n",
+                                "myip=`echo $myname | sed -e 's/ip-//' -e 's/-/./g'`\n",
+                                "myeip=`cfn-describe-stack-resource",
+                                " -s ", { "Ref" : "AWS::StackName" }, " -l EIP",
+                                " -I ", { "Ref" : "HostKeys" },
+                                " -S ", { "Fn::GetAtt" : [ "HostKeys", "SecretAccessKey" ] },
+                                " --region ", { "Ref" : "AWS::Region" },
+                                " | awk '{print $3}'`\n",
+                                "myfqdn=`host $myeip | awk '{print $5}' | sed -e 's/.$//'`\n",
+                                "echo $myip $myname $myeip $myfqdn\n",
+                                "easy_install http://ids-us-east-1.s3.amazonaws.com/ids-tools-latest.tar.gz\n",
+                                "ssh -o StrictHostKeyChecking=no $myfqdn uptime\n",
+                                "host $myname\n",
+                                "host $myfqdn\n",
+                                "ids-setup-data-server",
+                                " --irodszone=incf",
+                                " --icathost=ids.incf.net",
+                                " --irodshost=$myfqdn",
+                                " --irodsuser=sadm",
+                                " --irodspassword=storage",
+                                " --no-prompt\n",
+                                "rc=$?\n",
+                                "hline=`grep ^localhost /etc/irods/irodsHost`\n",
+                                "grep -v ^localhost /etc/irods/irodsHost",
+                                " > /etc/irods/irodsHost.new\n",
+                                "echo $hline $myname >> /etc/irods/irodsHost.new\n",
+                                "mv /etc/irods/irodsHost.new /etc/irods/irodsHost\n",
+                                "chown irods:irods /etc/irods/irodsHost\n",
+                                "mkdir /srv/irods/vault\n",
+                                "chown irods:irods /srv/irods/vault\n",
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+
+        "DataVolume" : {
+            "Type" : "AWS::EC2::Volume",
+            "Properties" : {
+                "Size" : { "Ref" : "DataVolumeSize" },
+                "AvailabilityZone" : { 
+                    "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "PrefAz" ]
+                }
+            }
+        },
+
+        "EIP" : {
+            "Type" : "AWS::EC2::EIP",
+            "Properties" : {
+                "InstanceId" : { "Ref" : "IDSDataServerInstance" }
+            }
+        },
+
+        "IDSSecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable ports for iRODS service and SSH",
+                "SecurityGroupIngress" : [ 
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "22",
+                        "ToPort" : "22",
+                        "CidrIp" : "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "1247",
+                        "ToPort" : "1247",
+                        "CidrIp" : "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "20000",
+                        "ToPort" : "20199",
+                        "CidrIp" : "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol" : "udp",
+                        "FromPort" : "20000",
+                        "ToPort" : "20199",
+                        "CidrIp" : "0.0.0.0/0"
+                    }
+                ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "InstanceId" : {
+            "Description" : "InstanceId of the newly created data server instance",
+            "Value" : { "Ref" : "IDSDataServerInstance" }
+        },
+        "AZ" : {
+            "Description" : "Availability Zone of the newly created data server instance",
+            "Value" : { "Fn::GetAtt" : [ "IDSDataServerInstance", "AvailabilityZone" ] }
+        },
+        "PublicDNS" : {
+            "Description" : "Public DNSName of the newly created data server instance",
+            "Value" : { "Fn::GetAtt" : [ "IDSDataServerInstance", "PublicDnsName" ] }
+        },
+        "PublicIP" : {
+            "Description" : "Public IP address of the newly created data server instance",
+            "Value" : { "Fn::GetAtt" : [ "IDSDataServerInstance", "PublicIp" ] }
+        }
+    }
+}

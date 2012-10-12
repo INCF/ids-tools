@@ -16,6 +16,9 @@ core_rule_file = '/etc/irods/reConfigs/core.re'
 if __name__ == '__main__':
 
     parser = optparse.OptionParser()
+    parser.add_option('--no-push', action='store_false',
+                      dest='push', default=True,
+                      help='don\'t push the rules to remote hosts')
     parser.add_option('--apply-only', action='store_true',
                       dest='apply', default=False,
                       help='only pull rules from DB and apply locally')
@@ -86,6 +89,10 @@ if __name__ == '__main__':
     # this forces the irodsReServer to re-read the rule base
     os.utime(core_rule_file, None)
 
+    # finish if we've been asked not to push the rules
+    if not options.push:
+        sys.exit(0)
+        
     if options.verbose:
         print('Push new rules to all zone data servers.')
     # push new rule definitions to all zone data servers

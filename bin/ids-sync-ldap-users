@@ -13,6 +13,9 @@ from ids.users import synchronize_user_db
 if __name__ == '__main__':
 
     parser = optparse.OptionParser()
+    parser.add_option('--remove', '-r', action='store_true',
+                      dest='remove', default=False,
+                      help='remove users and groups that do not exist in the LDAP directory')
     parser.add_option('--verbose', '-v', action='store_true',
                       dest="verbose", default=False,
                       help='print progress messages')
@@ -42,7 +45,8 @@ if __name__ == '__main__':
 
 
     print('Synchronizing \'incf\' zone user DB with LDAP users and groups...')
-    rc = synchronize_user_db(ldap_groups, irods_groups, verbose=options.verbose)
+    rc = synchronize_user_db(ldap_groups, irods_groups,
+                             remove=options.remove, verbose=options.verbose)
     if rc == None:
         sys.exit(1)
 

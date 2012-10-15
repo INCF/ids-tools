@@ -130,7 +130,7 @@ def get_irods_group_membership(zone):
 
 
 
-def synchronize_user_db(source_groups, dest_groups, verbose=False):
+def synchronize_user_db(source_groups, dest_groups, remove=False, verbose=False):
     """
     This function compares the source of users/groups to the destination
     and makes any changes to the destination iRODS instance to make them
@@ -138,6 +138,10 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
 
     Takes as input two dictionaries that are indexed by group name. Each
     dictionary entry is a list of users that are members of the group.
+
+    The remove flag indicates that items that don't exist in the source zone
+    should be removed from the destination. Make sure this is false if you
+    want to make sure that local changes to the user DB are retained.
 
     The verbose flag causes messages to be printed to indicate what
     synchronization stage is being performed.
@@ -147,31 +151,33 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
         return None
 
     # remove groups locally that don't exist in IDS
-    if verbose:
-        print('Removing groups no longer defined in the source zone...')
-    for group in dest_groups:
-        if group not in source_groups:
-            if run_iadmin('rmgroup', [ group, ], verbose=verbose):
-                if verbose:
-                    print('\terror removing group %s' % (group,))
-            else:
-                if verbose:
-                    print('\tremoved group %s' % (group,))
+    if remove:
+        if verbose:
+            print('Removing groups no longer defined in the source zone...')
+        for group in dest_groups:
+            if group not in source_groups:
+                if run_iadmin('rmgroup', [ group, ], verbose=verbose):
+                    if verbose:
+                        print('\terror removing group %s' % (group,))
+                    else:
+                        if verbose:
+                            print('\tremoved group %s' % (group,))
 
     # remove users that don't exist in IDS's ids-user group
-    if verbose:
-        print('Removing users that have been removed from \'ids-user\'...')
-    if 'ids-user' in dest_groups:
-        for user in dest_groups['ids-user']:
-            if user not in source_groups['ids-user']:
-                zone_user = user + '#incf'
-                if run_iadmin('rmuser', [ zone_user, ], verbose=verbose):
-                    if verbose:
-                        print('\terror removing user %s' % (zone_user,))
-                        print('\tThey might still own files in iRODS.')
-                else:
-                    if verbose:
-                        print('\tremoved user %s' % (zone_user,))
+    if remove:
+        if verbose:
+            print('Removing users that have been removed from \'ids-user\'...')
+        if 'ids-user' in dest_groups:
+            for user in dest_groups['ids-user']:
+                if user not in source_groups['ids-user']:
+                    zone_user = user + '#incf'
+                    if run_iadmin('rmuser', [ zone_user, ], verbose=verbose):
+                        if verbose:
+                            print('\terror removing user %s' % (zone_user,))
+                            print('\tThey might still own files in iRODS.')
+                        else:
+                            if verbose:
+                                print('\tremoved user %s' % (zone_user,))
 
 
     # Additions
@@ -219,7 +225,7 @@ def synchronize_user_db(source_groups, dest_groups, verbose=False):
 
         # remove user from group
         for user in dest_groups[group]:
-            if user not in source_groups[group]:
+            if remove and user not in source_groups[group]:
                 zone_user = user + '#incf'
                 if run_iadmin('rfg', [group, zone_user], verbose=verbose):
                     if verbose:

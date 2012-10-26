@@ -78,7 +78,7 @@
                                 "cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys\n",
                                 "touch /root/.ssh/config\n",
                                 "apt-get update\n",
-                                "apt-get -y install python-setuptools python-ldap\n",
+                                "apt-get -y install python-setuptools\n",
                                 "myname=`hostname`\n",
                                 "myip=`echo $myname | sed -e 's/ip-//' -e 's/-/./g'`\n",
                                 "myeip=", { "Ref" : "IPAddress" }, "\n",

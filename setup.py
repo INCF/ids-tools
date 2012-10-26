@@ -22,7 +22,6 @@ setup(name = "ids-tools",
           "ids.fabfile.templates": ["*.tmpl",]},
       include_package_data = True,
       install_requires = [
-          "python-ldap",
           "argparse",
           "Fabric"],
       license = "ASL",

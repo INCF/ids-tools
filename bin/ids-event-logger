@@ -368,7 +368,7 @@ def process_event(event):
         write_event_log(event)
         if debug > 0:
             print event_tmpl % event
-    elif debug > 0:
+    elif debug > 1:
         event['target'] = 'NoTarget'
         event['attributes'] = ''
         print event_tmpl % event
@@ -577,7 +577,7 @@ if __name__ == '__main__':
         if not event:
             continue
 
-        if debug > 1:
+        if debug > 2:
             print('%s-%s:\'%s\':\'%s\''
                   % (msg['agentpid'], msg['seqnum'],
                      msg['header'], msg['body']))

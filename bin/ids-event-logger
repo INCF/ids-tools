@@ -47,6 +47,12 @@ localzone = 'localZone'
 coll_cache = None
 
 
+# This is a list of collection names to ignore. Events that
+# correspond to object and collections within the named
+# prefixes are ignored and not logged.
+ignore_list = None
+
+
 # Need to make the ixmsg Popen handle global for the signal
 # handler to properly kill the ixmsg process when the script
 # receives a signal to terminate
@@ -95,6 +101,11 @@ def write_event_log(event):
     if ('target' not in event
         or 'timestamp' not in event):
         return False
+
+    # if debug is 3 or greater, return success, but
+    # don't actually write anything
+    if debug >= 3:
+        return True
 
 
     # Log files are written into a directory structure that mirrors
@@ -365,9 +376,14 @@ def process_event(event):
 
     if event['type'] in event_handlers:
         event_handlers[event['type']](event)
-        write_event_log(event)
-        if debug > 0:
-            print event_tmpl % event
+        if (not ignore_list
+            or len([coll for coll in ignore_list if event['target'].startswith(coll)]) == 0):
+            write_event_log(event)
+            if debug > 0:
+                print event_tmpl % event
+        else:
+            if debug > 1:
+                print event_tmpl % event
     elif debug > 1:
         event['target'] = 'NoTarget'
         event['attributes'] = ''
@@ -493,6 +509,8 @@ if __name__ == '__main__':
                         help='directory where logs are stored')
     parser.add_argument('--numevents', '-n', type=int, default=0,
                         help='exit after processing this many events')
+    parser.add_argument('--ignorecoll', '-i', action='append',
+                        help='ignore events within the collection named in the argument')
     args = parser.parse_args()
 
 
@@ -502,6 +520,11 @@ if __name__ == '__main__':
         sys.exit(1)
         
 
+    # save the ignore list
+    if args.ignorecoll:
+        ignore_list = args.ignorecoll
+
+        
     # Quick sanity check if the log directory exists.
     # We won't create the log directory if it doesn't exist.
     if args.logdir:

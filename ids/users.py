@@ -87,8 +87,9 @@ def get_ldap_group_membership():
         if search_results == None:
             return None
         for results in search_results:
-            for dn in results[1]['member']:
-                group_list[group].append(ldap.dn.str2dn(dn)[0][0][1])
+            if 'member' in results[1]:
+                for dn in results[1]['member']:
+                    group_list[group].append(ldap.dn.str2dn(dn)[0][0][1])
         
     return group_list
 

@@ -119,6 +119,13 @@ def check_namespace_policy(zone, prefix, org, verbose=False):
         path_prefix = os.path.join('/', zone)
 
 
+    # check if the anonymous user is defined within the zone. if
+    # so, we'll check that it has the same ACLs set as the public group
+    include_anonymous = False
+    if irods_user_exists('anonymous#%s' % (zone,)) > 0:
+        include_anonymous = True
+
+
     if verbose:
         print('Checking path %s for IDS policy compliance.' % (path_prefix,))
 
@@ -232,17 +239,29 @@ def check_namespace_policy(zone, prefix, org, verbose=False):
         if verbose:
             print('  checking ACLs on %s.' % (path,))
         acl_list = irods_coll_getacls(path, verbose)
+        acl_targets = [acl[0] for acl in acl_list]
         group = 'public#%s' % (zone,)
-        if group in [acl[0] for acl in acl_list]:
+        if group in acl_targets:
             if verbose:
-                print('  ACLs correct on %s.' % (path,))
+                print('  ACL for %s correct on %s.' % (group, path,))
             ns_policy_report[path]['acl'] = True
         else:
             if verbose:
-                print('  no required \'read\' ACLs for %s on path %s'
+                print('  no required \'read\' ACL for %s on path %s'
                       % (group, path,))
             ns_policy_report[path]['acl'] = False
             complies = False
+        if include_anonymous:
+            anonymous = 'anonymous#%s' % (zone,)
+            if anonymous in acl_targets:
+                if verbose:
+                    print('  ACL for %s correct on %s.' % (anonymous, path,))
+            else:
+                if verbose:
+                    print('  no required \'read\' ACL for %s on path %s'
+                          % (anonymous, path,))
+                ns_policy_report[path]['acl'] = False
+                complies = False
         
 
     return (complies, ns_policy_report)
@@ -310,8 +329,16 @@ def setup_namespace(zone, prefix, org, org_owner, verbose=False):
         org_user = None
 
 
+    # check if the anonymous user is defined within the zone
+    # if so, it will be given a 'read' ACL on the same
+    # collections as the 'public' group
+    include_anonymous = False
+    if irods_user_exists('anonymous#%s' % (zone,)) > 0:
+        include_anonymous = True
+
+
     # top-level '/zone/organization' or '/prefix/organization' collection.
-    # 'public' gets read ACL so browsing can work
+    # 'public' and 'anonymous' get read ACLs so browsing can work
     if org:
         if verbose:
             print('  creating collection %s' % (path_prefix,))
@@ -319,8 +346,25 @@ def setup_namespace(zone, prefix, org, org_owner, verbose=False):
         if rc:
             return rc
         acl_list = [['public#%s' % (zone,), 'read'], [org_user, 'own']]
+        if include_anonymous:
+            acl_list.append(['anonymous#%s' % (zone,), 'read'])
         if verbose:
             print('  setting default ACLs on %s' % (path_prefix,))
+        rc = irods_setacls(path_prefix, acl_list, verbose)
+        if rc:
+            return rc
+    else:
+        # if we're setting up '/zone', then we need need to make sure
+        # that 'public' and 'anonymous' can read and '/' and '/zone' so 
+        # browsing will work
+        acl_list = [['public#%s' % (zone,), 'read'],]
+        if include_anonymous:
+            acl_list.append(['anonymous#%s' % (zone,), 'read'])
+        if verbose:
+            print('  setting default ACLs on %s' % (path_prefix,))
+        rc = irods_setacls('/', acl_list, verbose)
+        if rc:
+            return rc
         rc = irods_setacls(path_prefix, acl_list, verbose)
         if rc:
             return rc
@@ -374,6 +418,8 @@ def setup_namespace(zone, prefix, org, org_owner, verbose=False):
     if rc:
         return rc
     acl_list = [['public#%s' % (zone,), 'read'],]
+    if include_anonymous:
+        acl_list.append(['anonymous#%s' % (zone,), 'read'])
     if org:
         acl_list.append([org_user, 'own'])
     if verbose:

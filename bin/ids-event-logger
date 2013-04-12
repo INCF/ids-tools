@@ -1,20 +1,16 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # -*- python -*-
 
 import os
 import sys
-import re
 import signal
 import errno
-import argparse
+import time
 from datetime import datetime
-from subprocess import check_output, Popen, PIPE, STDOUT, CalledProcessError
-
-from ids.utils import get_local_zone, run_iquest
 
 
 
-# Extra debug output
+# Don't actually write log files.
 debug = 0
 
 
@@ -22,51 +18,24 @@ debug = 0
 log_dir = '/tmp/ids_audit_logs'
 
 
-# Stream '3' is the pre-defined ticket stream 
-# number for rule engine audit messages.
-# The 'stdbuf' program stops ixmsg from buffering on it's pipe-based stdout
-ixmsg_cmd = ['stdbuf', '-o', '0', 'ixmsg', 'r', '-t', '3']
-
-
 # desired ISO 8601 date/time format
 iso_8601_fmt = '%Y%m%dT%H%M%S.%fZ'
 
 
-# an event template
-event_tmpl = '%(timestamp)s:%(type)s:%(user)s:%(target)s:%(attributes)s'
-
-
-# For the local zone name
-localzone = 'localZone'
-
-
-# We need a cache of collection names, so that we can identify
-# appropriate log file locations for events. This will be
-# initialized as a set from the list of collections in the zone
-# at logger startup time.
-coll_cache = None
-
-
-# This is a list of collection names to ignore. Events that
-# correspond to object and collections within the named
-# prefixes are ignored and not logged.
-ignore_list = None
-
-
-# Need to make the ixmsg Popen handle global for the signal
-# handler to properly kill the ixmsg process when the script
-# receives a signal to terminate
-ixmsg_proc = None
-
-
-# Need the location of the pidfile so that any signal handlers
+# Need the location of the lock file so that any signal handlers
 # can remove the file when exiting the script
-pidfile = None
+lock_file_name = None
 
 
-# mappings of iRODS rule engine action names to an "event type"
+# Try to acquire the lock for the log file lock_retries times.
+# Between attempts, sleep for retry_interval seconds
+lock_retries = 5
+retry_interval = 1
+
+
+# mappings of iRODS rule names to an "event type"
 # (intended to be more human understandable)
-action_to_event = {
+rule_to_event = {
     'acPostProcForOpen': 'open',
     'acPostProcForCreate': 'create',
     'acPostProcForPut': 'put',
@@ -83,29 +52,34 @@ action_to_event = {
 
 
 
-def write_event_log(event):
+def write_event_log(event, event_str):
     """
     Based on the details of the event, will open the appropriate
     log file in which the event can be logged, and will write
-    the event to the log file.
+    the event_str to the log file.
 
-    Will return True is the write was successful, False
-    if there was some detected error (e.g. in the input),
-    and otherwise will let underlying system functions raise
-    exceptions.
+    Will cause the script to exit (and print and error message)
+    if some error is encountered.
     """
-    
     if not event:
-        return False
-
+        return
     if ('target' not in event
         or 'timestamp' not in event):
-        return False
+        return
 
-    # if debug is 3 or greater, return success, but
+    # we may be able to ignore this event
+    ignore_list = os.getenv('IDS_AUDIT_IGNORE_PATH')
+    
+    if (ignore_list
+        and len([coll for coll in ignore_list.split(':')
+                 if event['target'].startswith(coll)]) != 0):
+        return
+
+    # if debug is set, return success, but
     # don't actually write anything
-    if debug >= 3:
-        return True
+    if debug > 0:
+        print(event_str)
+        return
 
 
     # Log files are written into a directory structure that mirrors
@@ -114,236 +88,268 @@ def write_event_log(event):
     # to be written will be located at 'log_dir/zone/path/to' in a
     # log file named for the date in the timestamp field of the
     # record (i.e. so there will be at most an audit log file per
-    # collection per day). For a collection, audit events will be
-    # placed into the log files in 'log_dir/zone/path/to/collection'
-    # (i.e. in the directory corresponding to that collection).
+    # collection per day). It's the same for collections (i.e.
+    # the target '/zone/path/to/collection' will go into the log file
+    # 'log_dir/zone/path/to'.
 
-    # is the target a collection? check the collection cache.
-    # if not, use the target's 'dirname' 
-    if event['target'] in coll_cache:
-        coll_part = event['target'].lstrip('/')
+    # There are a few ways to set log_dir. Command line 'logdir' option,
+    # the 'IDS_AUDIT_LOGDIR' environment variable, or just setting
+    # log_dir at the top of the script. Precedences is CLI, env, variable.
+    global log_dir
+    if 'logdir' in event:
+        log_dir = event['logdir']
     else:
-        coll_part = os.path.dirname(event['target']).lstrip('/')
+        log_dir = os.getenv('IDS_AUDIT_LOGDIR', log_dir)
 
+
+    # make sure the log directory exists and that it's writable,
+    # as we won't create it if it doesn't exist already
+    if not os.path.isdir(log_dir):
+        print('ERROR: %s: log directory %s does not exist, or is not a directory.'
+              % (sys.argv[0], log_dir))
+        sys.exit(0)
+    if not os.access(log_dir, os.W_OK):
+        print('ERROR: %s: cannot write to log directory %s'
+              % (sys.argv[0], log_dir))
+        sys.exit(0)
+
+
+    coll_part = os.path.dirname(event['target']).lstrip('/')
     log_dir_name = os.path.join(log_dir, coll_part)
 
+    # create the needed paths to the log file
     try:
         os.makedirs(log_dir_name, 0700)
     except OSError as e:
         if e.errno == errno.EEXIST:
             pass
         else:
-            print('Error creating log directory %s. Error is %s.'
-                  % (log_dir_name, e.strerror))
-            return False
-
+            print('ERROR: %s: creating log directory %s. Error is %s.'
+                  % (sys.argv[0], log_dir_name, e.strerror))
+            sys.exit(0)
 
     log_file_name = os.path.join(log_dir_name, '_ids_audit_log.%s'
                                  % (event['timestamp'][:8],))
+    lock_file_name = "%s.lck" % (log_file_name,)
+
+    # first we'll lock the log file by creating a lockfile
+    # beside the log file. The script will keep trying for
+    # some time to acquire the lock. Note: this scheme
+    # won't work properly on an NFS volume. Beware!
+    need_lock = True
+    global lock_retries
+    while need_lock and lock_retries > 0:
+        try:
+            lock_fd = os.open(lock_file_name, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0600)
+            os.write(lock_fd, "%d\n" % (os.getpid(),))
+            os.close(lock_fd)
+            need_lock = False
+        except OSError, e:
+            if e.errno == errno.EEXIST:
+                print('Another logger has the lock ... try again.')
+                time.sleep(retry_interval)
+                lock_retries -= 1
+            else:
+                print('ERROR: %s: error opening %s: %s'
+                      % (sys.argv[0], lock_file_name, e.strerror))
+                sys.exit(0)
+
+    # write to the event log
     try:
         old_mask = os.umask(077)
         log_file = open(log_file_name, 'a')
-        log_file.write('%s\n' % (event_tmpl % event,))
+        log_file.write('%s\n' % (event_str,))
         log_file.close()
         os.umask(old_mask)
     except OSError as e:
-        print('Error writing to log file %s. Error is %s.'
-              % (log_file_name, e.strerror))
-        return False
+        print('ERROR: %s: writing to log file %s: %s.'
+              % (sys.argv[0], log_file_name, e.strerror))
+        os.remove(lock_file_name)
+        sys.exit(0)
+
+    os.remove(lock_file_name)
+    return
+
     
-
-    return True
-
-    
-    
-def get_param_list(param_str):
-    if param_str:
-        return [param.strip() for param in param_str.split(',')]
-    else:
-        return None
-
-
-
-def get_context_dict(ctx_str):
-    if ctx_str:
-        return dict([i.split(':') for i in ctx_str.split()])
-    else:
-        return None
-
-
-
+data_obj_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    ':resource=%(resource)s'
+    )
 def data_obj_handler(event):
     """
     This event handler processes events that
     target single data objects. It expects the
-    context items 'DATA' and 'RESC', and will
-    set 'destination_resource' as an attribute.
+    parameters 'target' and 'resource'
     """
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'resource' not in event:
+        print('ERROR: %s: missing "resource" in %s event' % (sys.argv[0], event['type']))
+        return
+
+    write_event_log(event, data_obj_event_tmpl % event)
+
+    return
+
     
-    if 'DATA' in event['context']:
-        event['target'] = event['context']['DATA']
-    else:
-        event['target'] = 'UndefinedTarget'
 
-    attrs = []
-    
-    if 'RESC' in event['context']:
-        attrs.append('destination_resource=%s' % (event['context']['RESC'],))
-
-    event['attributes'] = ','.join(attrs)
-
-
-
+path_reg_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    ':resource=%(resource)s:srcpath=%(srcpath)s'
+    )
 def path_reg_handler(event):
     """
     This event handler processes events that
     register existing files into iRODS. It expects
-    the context items 'DATA', 'FILE' and 'RESC', and
-    will set 'vault_path' and 'destination_resource'
-    as attribute items.
+    the target, resource and srcpath to be set.
     """
-    
-    if 'DATA' in event['context']:
-        event['target'] = event['context']['DATA']
-    else:
-        event['target'] = 'UndefinedTarget'
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'resource' not in event:
+        print('ERROR: %s: missing "resource" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'srcpath' not in event:
+        print('ERROR: %s: missing "srcpath" in %s event' % (sys.argv[0], event['type']))
+        return
 
-    attrs = []
+    write_event_log(event, path_reg_event_tmpl % event)
 
-    if 'FILE' in event['context']:
-        attrs.append('vault_path=%s' % (event['context']['FILE'],))
-        
-    if 'RESC' in event['context']:
-        attrs.append('destination_resource=%s' % (event['context']['RESC'],))
-
-    event['attributes'] = ','.join(attrs)
+    return
                                         
 
 
-def replicate_handler(event):
-    """
-    This event handler processes events that
-    replicate existing data objects. It expects
-    the context items 'DATA' and 'RESC', and
-    will set 'destination_resource' as an attribute.
-    """
-    
-    if 'DATA' in event['context']:
-        event['target'] = event['context']['DATA']
-    else:
-        event['target'] = 'UndefinedTarget'
-
-    attrs = []
-
-    if 'RESC' in event['context']:
-        attrs.append('destination_resource=%s' % (event['context']['RESC'],))
-
-    event['attributes'] = ','.join(attrs)
-                                        
-
-
+coll_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    )
 def collection_handler(event):
     """
     This event handler processes events that
     target single collections. It expects the
-    context item 'COLL'.
+    target parameter to be set.
     """
-    
-    if 'COLL' in event['context']:
-        event['target'] = event['context']['COLL']
-        # if this collection name is not in the cache, add it
-        if event['target'] not in coll_cache:
-            coll_cache.add(event['target'])
-    else:
-        event['target'] = 'UndefinedTarget'
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
 
-    event['attributes'] = ''
+    write_event_log(event, coll_event_tmpl % event)
+
+    return
                                         
 
 
+rename_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    ':newname=%(newname)s'
+    )
 def rename_handler(event):
     """
     This event handler processes rename events
-    (both objects and collections). It expects the
-    context item 'DATAIN', and will set 'source'
-    and 'target' attribute items based on the
-    action parameters.
+    (both objects and collections). It expects
+    the attributes 'target' for the target of
+    the rename (i.e. the new name), and 'oldpath'
+    for the old name.
     """
-    
-    if 'DATAIN' in event['context']:
-        event['target'] = event['context']['DATAIN']
-    else:
-        event['target'] = 'UndefinedTarget'
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'newname' not in event:
+        print('ERROR: %s: missing "newname" in %s event' % (sys.argv[0], event['type']))
+        return
 
-    attrs = []
-    
-    if event['params']:
-        attrs.append('source=%s' % (event['params'][0],))
-        attrs.append('destination=%s' % (event['params'][1],))
-        
-    event['attributes'] = ','.join(attrs)
+    write_event_log(rename_event_tmpl % event)
+
+    return
                                         
 
 
+modify_acl_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    ':targetuser=%(targetuser)s,access=%(access)s,recursive=%(recursive)s'
+    )
 def modify_acl_handler(event):
     """
     This event handler processes change in
-    ACL events. It pulls needed information
-    from the 'params' of the event.
+    ACL events. It's expecting the attributes
+    target (target of the operation), targetuser,
+    access, and recursive.
     """
-
-    if not event['params']:
-        event['target'] = 'UndefinedTarget'
-        event['attributes'] = ''
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'targetuser' not in event:
+        print('ERROR: %s: missing "targetuser" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'access' not in event:
+        print('ERROR: %s: missing "access" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'recursive' not in event:
+        print('ERROR: %s: missing "recursive" in %s event' % (sys.argv[0], event['type']))
         return
 
-    event['target'] = event['params'][4]
-
-    attrs = []
-    
-    if int(event['params'][0]) == 1:
-        attrs.append('recursive=true')
+    if event['recursive'] == '1':
+        event['recursive'] = 'true'
     else:
-        attrs.append('recursive=false')
+        event['recursive'] = 'false'
 
-    attrs.append('access=%s' % (event['params'][1],))
+    write_event_log(event, modify_acl_event_tmpl % event)
 
-    if event['params'][3]:
-        attrs.append('user=%s#%s' % (event['params'][2], event['params'][3]))
-    else:
-        attrs.append('user=%s#%s' % (event['params'][2], localzone))
-
-    event['attributes'] = ','.join(attrs)
+    return
     
         
 
+modify_metadata_event_tmpl = (
+    '%(timestamp)s:%(type)s:%(user)s:%(target)s'
+    ':operation=%(operation)s,targettype=%(targettype)s'
+    ',attrname=%(attrname)s,attrval=%(attrval)s,attrunits=%(attrunits)s'
+    )
 def modify_metadata_handler(event):
     """
     This event handler processes change in
-    metadata events. It pulls needed information
-    from the 'params' of the event.
+    metadata events. It expects the attributes
+    target, targettype, attrname, attrval and attrunits.
     """
-
-    if not event['params']:
-        event['target'] = 'UndefinedTarget'
-        event['attributes'] = ''
+    if not event:
+        return
+    if 'target' not in event:
+        print('ERROR: %s: missing "target" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'operation' not in event:
+        print('ERROR: %s: missing "operation" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'targettype' not in event:
+        print('ERROR: %s: missing "targettype" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'attrname' not in event:
+        print('ERROR: %s: missing "attrname" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'attrval' not in event:
+        print('ERROR: %s: missing "attrval" in %s event' % (sys.argv[0], event['type']))
+        return
+    if 'attrunits' not in event:
+        print('ERROR: %s: missing "attrunits" in %s event' % (sys.argv[0], event['type']))
         return
 
-    event['target'] = event['params'][2]
-
-    attrs = []
-    
-    attrs.append('operation=%s' % (event['params'][0],))
-
-    if event['params'][1] == '-d':
-        attrs.append('target_type=dataobject')
-    elif event['params'][1] == '-c':
-        attrs.append('target_type=collection')
+    if event['targettype'] == '-d':
+        event['targettype'] = 'dataobject'
+    elif event['targettype'] == '-c':
+        event['targettype'] = 'collection'
         
-    attrs.append('attribute_name=%s' % (event['params'][3],))
+    write_event_log(event, modify_metadata_event_tmpl % event)
 
-    event['attributes'] = ','.join(attrs)
-    
+    return
+
 
 
 event_handlers = {
@@ -351,7 +357,7 @@ event_handlers = {
     'create': data_obj_handler,
     'put': data_obj_handler,
     'copy': data_obj_handler,
-    'replicate': replicate_handler,
+    'replicate': data_obj_handler,
     'rename': rename_handler,
     'register': path_reg_handler,
     'delete': data_obj_handler,
@@ -363,137 +369,14 @@ event_handlers = {
 
 
 
-def process_event(event):
-    
-    event['params'] = get_param_list(event['param_str'])
-    event['context'] = get_context_dict(event['ctx_str'])
-
-    if event['context'] and 'USER' in event['context']:
-        # transform user@zone to more typical iRODS user#zone
-        event['user'] = event['context']['USER'].replace('@', '#')
-    else:
-        event['user'] = 'NoUser#NoZone'
-
-    if event['type'] in event_handlers:
-        event_handlers[event['type']](event)
-        if (not ignore_list
-            or len([coll for coll in ignore_list if event['target'].startswith(coll)]) == 0):
-            write_event_log(event)
-            if debug > 0:
-                print event_tmpl % event
-        else:
-            if debug > 1:
-                print event_tmpl % event
-    elif debug > 1:
-        event['target'] = 'NoTarget'
-        event['attributes'] = ''
-        print event_tmpl % event
-
-
-
-def parse_event(msg_header, msg_body):
-    """
-    Given a message we're interested, parse the header and
-    body strings into the component parts that make up
-    an event of interest. 
-
-    Returns a dictionary (an 'event') with items:
-    - timestamp
-    - type (open, create, put, etc)
-    - user (the iRODS "client user")
-    - target (the pathname of a data object/collection)
-    - attributes (name/value pairs of extra information)
-    
-    If there is a problem parsing, None will be returned.
-    """
-
-    event = {}
-
-    # parse out the timestamp from the header
-    m = re.match(r'iaudit:(.+):.*$', msg_header)
-    if not m:
-        return None
-
-    event['timestamp'] = m.group(1)
-
-
-    # parse the action and parameters out of the body
-    m = re.match(r'Done:(\w+)\((.*)\)(.*)$', msg_body)
-    if not m:
-        return None
-
-    if m.group(1) in action_to_event:
-        event['type'] = action_to_event[m.group(1)]
-    else:
-        event['type'] = m.group(1)
-
-    event['param_str'] = m.group(2)
-    event['ctx_str'] = m.group(3)
-
-    return event
-
-
-        
-def parse_message(msg_str):
-    """
-    Given the message string (from ixmsg output), parse out
-    all the relevant fields and put in a dictionary.
-
-    Returns the dictionary, or None if the event couldn't
-    be parsed.
-    """
-    m = re.match(r'(\w+)@(\w+):(\S+):(\d+)#(\d+)::(iaudit:[\w\.]+:[\w\s]+):(.*)',
-                 msg_str)
-    if not m:
-        return None
-
-    msg = {}
-    
-    msg['user'] = m.group(1)
-    msg['zone'] = m.group(2)
-    msg['agenthost'] = m.group(3)
-    msg['agentpid'] = m.group(4)
-    msg['seqnum'] = m.group(5)
-    msg['header'] = m.group(6).replace(' ', '') #collapse white space
-    msg['body'] = m.group(7).strip() # remove leading/trailing white space
-
-    return msg
-
-
-
-def filter_message(msg):
-    """
-    Check if we're interested in this message. If we should
-    process this message return True, otherwise return False
-    """
-    if not msg:
-        return False
-
-    if not 'header' in msg or not 'body' in msg:
-        return False
-
-    if not 'ExecAction' in msg['header']:
-        return False
-
-    if not msg['body'].startswith('Done:'):
-        return False
-
-    return True
-
-
-
 def script_cleanup(signal, frame):
     """
-    Properly terminate the ixmsg process, as it does
-    not get cleaned up properly on script exit.
+    In case the script gets killed by a signal
+    before it releases it's log file lock.
     """
-    if ixmsg_proc:
-        ixmsg_proc.terminate()
-    print('Caught termination signal. Exiting.')
-    if pidfile:
-        os.remove(pidfile)
+    if lock_file_name:
+        os.remove(lock_file_name)
     sys.exit(0)
-
 
 
 if __name__ == '__main__':
@@ -504,114 +387,49 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, script_cleanup)
 
     # parse command line arguments
-    parser = argparse.ArgumentParser(description='Log IDS audit events to files')
-    parser.add_argument('--logdir', '-l',
-                        help='directory where logs are stored')
-    parser.add_argument('--numevents', '-n', type=int, default=0,
-                        help='exit after processing this many events')
-    parser.add_argument('--ignorecoll', '-i', action='append',
-                        help='ignore events within the collection named in the argument')
-    args = parser.parse_args()
+    event = {}
 
+    #
+    # All commands start with:
+    #   - rule name
+    #   - epoch timestamp
+    #   - user performing the action
+    if len(sys.argv) < 4:
+        print('ERROR: %s: missing leading arguments' % (sys.argv[0],))
+        sys.exit(0)
 
-    # numevents needs to be >= 0, with 0 meaning no limit
-    if args.numevents < 0:
-        print('The --numevents argument must be a positive integer.')
-        sys.exit(1)
-        
+    if sys.argv[1] not in rule_to_event:
+        print('ERROR: %s: unknown rule name %s' % (sys.argv[0], sys.argv[1]))
+        sys.exit(0)
+    else:
+        event['type'] = rule_to_event[sys.argv[1]]
 
-    # save the ignore list
-    if args.ignorecoll:
-        ignore_list = args.ignorecoll
-
-        
-    # Quick sanity check if the log directory exists.
-    # We won't create the log directory if it doesn't exist.
-    if args.logdir:
-        log_dir = args.logdir
-        
-    if not os.path.isdir(log_dir):
-        print('Log directory %s does not exist, or is not a directory.'
-              % (log_dir,))
-        sys.exit(1)
-
-    if not os.access(log_dir, os.W_OK):
-        print('Cannot write to log directory %s' % (log_dir,))
-        sys.exit(1)
-
-
-    # create a pid file. If the file exists already, it means that
-    # another logger is running, so this one should exit
-    pidfile = os.path.join(log_dir, ".logger.pid")
     try:
-        pid_fd = os.open(pidfile, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0600)
-        os.write(pid_fd, "%d\n" % (os.getpid(),))
-        os.close(pid_fd)
-    except OSError, e:
-        if e.errno == errno.EEXIST:
-            print('Cannot write pidfile. Another logger is probably running. Exiting.')
+        epoch = float(sys.argv[2])
+    except ValueError:
+        print('ERROR: %s: epoch argument must be a number' % (sys.argv[0],))
+        sys.exit(0)
+    event['timestamp'] = datetime.utcfromtimestamp(epoch).strftime(iso_8601_fmt)
+
+    if (sys.argv[3].find('#', 1, -1) == -1):
+        print('ERROR: %s: user argument must be in "user#zone" format' % (sys.argv[0],))
+        sys.exit(0)
+    event['user'] = sys.argv[3]
+
+    # the rest of the arguments are 'name=value' pairs
+    # parse them into the event dict
+    for index, arg in enumerate(sys.argv):
+        if index < 4:
+            continue
+        if arg.find('=', 1, -1) == -1:
+            print('ERROR: %s: malformed name/value argument: %s' % (sys.argv[0], arg))
             sys.exit(0)
-        else:
-            print('Error opening %s: %s' % (pidfile, e.strerror))
-            sys.exit(1)
+        n, v = arg.split('=')
+        event[n] = v
 
-    
-    # identify the local zone name
-    localzone = get_local_zone()
-    if not localzone:
-        print('Could not retrieve the local zone name.')
-        os.remove(pidfile)
-        sys.exit(1)
-
-
-    # initialize the collection cache
-    coll_list = run_iquest('select COLL_NAME', '%s')
-    if not coll_list:
-        print('List of collections from local zone is empty. Something is wrong!')
-        os.remove(pidfile)
-        sys.exit(1)
+    # call the event-specific handler. The event-handler mostly just
+    # does parameter checking before logging the event
+    if event['type'] in event_handlers:
+        event_handlers[event['type']](event)
         
-    coll_cache = set()
-    for coll in coll_list:
-        coll_cache.add(coll)
-        
-        
-    try:
-        ixmsg_proc = Popen(ixmsg_cmd, stdout=PIPE, stderr=STDOUT)
-    except OSError as e:
-        print('Error running ixmsg: %s' % (e.strerror,))
-        os.remove(pidfile)
-        sys.exit(1)
-
-    lines = 0
-    while (ixmsg_proc.returncode == None and
-           (args.numevents == 0
-            or lines < args.numevents)):
-        # Each line contains one rule engine audit event.
-        # Parse the line, and see if it's one we want to look at
-        line = ixmsg_proc.stdout.readline().rstrip('\n')
-        lines += 1
-        msg = parse_message(line)
-        if not msg or not filter_message(msg):
-            continue
-
-        # Parse the message into event 'fields'
-        event = parse_event(msg['header'], msg['body'])
-        if not event:
-            continue
-
-        if debug > 2:
-            print('%s-%s:\'%s\':\'%s\''
-                  % (msg['agentpid'], msg['seqnum'],
-                     msg['header'], msg['body']))
-
-        # calls event-specific handlers (mostly to parse
-        # out event-specific fields) and sends the event
-        # where it needs to go (e.g. logfile)
-        process_event(event)
-        
-        ixmsg_proc.poll()
-
-    ixmsg_proc.terminate()
-    os.remove(pidfile)
     sys.exit(0)

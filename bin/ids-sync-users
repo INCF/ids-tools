@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     print('Getting list of users from the local zone...')
     local_groups = get_irods_group_membership(None)
-    if ids_groups == None:
+    if local_groups == None:
         sys.exit(1)
     if options.verbose:
         for group in local_groups:

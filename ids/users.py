@@ -196,6 +196,13 @@ def synchronize_user_db(source_groups, dest_groups, remove=False, verbose=False)
                 if verbose:
                     print('\tadded new group %s' % (group,))
 
+    # can happen on initial sync if there is an error adding ids-user above
+    if 'ids-user' not in dest_groups:
+        if verbose:
+            print("\tCannot synchronize group 'ids-user'. It does not exist locally!")
+        return None
+
+
     # add users from ids-user that don't exist locally
     if verbose:
         print('Adding new users from \'ids-user\'...')
@@ -222,7 +229,13 @@ def synchronize_user_db(source_groups, dest_groups, remove=False, verbose=False)
     if verbose:
         print('Synchronizing group membership...')
     for group in source_groups:
-        if group == 'ids-user': continue
+        if group == 'ids-user':
+            continue
+
+        if group not in dest_groups:
+            if verbose:
+                print('\tCannot synchronize group %s. It does not exist locally.' % (group,))
+            continue
 
         # remove user from group
         for user in dest_groups[group]:

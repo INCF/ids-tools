@@ -56,4 +56,126 @@ acCreateUserF1 {
   }
 }
 
+#
+# These rules are the entry points for taking action
+# when something happens in iRODS (the 'post-action'
+# rules). One application is to generate audit events.
+#
+acPostProcForOpen {
+  acAuditEvent("acPostProcForOpen", $objPath, $rescName);
+}
+acPostProcForCreate {
+  acAuditEvent("acPostProcForCreate", $objPath, $rescName);
+}
+acPostProcForPut {
+  acAuditEvent("acPostProcForPut", $objPath, $rescName);
+}
+acPostProcForCopy {
+  acAuditEvent("acPostProcForCopy", $objPath, $rescName);
+}
+acPostProcForRepl {
+  acAuditEvent("acPostProcForRepl", $objPath, $rescName);
+}
+acPostProcForDelete {
+  acAuditEvent("acPostProcForDelete", $objPath, $rescName);
+}
+acPostProcForCollCreate {
+  acAuditEvent("acPostProcForCollCreate", $collName);
+}
+acPostProcForRmColl {
+  acAuditEvent("acPostProcForRmColl", $collName);
+}
+acPostProcForFilePathReg {
+  acAuditEvent("acPostProcForFilePathReg", $objPath, $rescName, $filePath);
+}
+acPostProcForObjRename(*sourceObject, *destObject) {
+  acAuditEvent("acPostProcForObjRename", *sourceObject, *destObject);
+}
+cPostProcForModifyAccessControl(*recursive, *access, *user, *zone, *path) {
+  acAuditEvent("acPostProcForModifyAccessControl", *path, *user++"#"++*zone, *access, *recursive);
+}
+acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v, *u) {
+  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, *u);
+}
+acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v) {
+  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, "");
+}
 
+#
+# Rules that are used to generate and log audit events.
+# DO NOT CHANGE 
+#
+acAuditEvent(*ruleName, *target, *arg1, *arg2, *arg3, *arg4, *arg5) {
+  on (*ruleName == 'acPostProcForModifyAVUMetadata') {
+    *p = "target=*target";
+    *p = "*p operation=*arg1";
+    *p = "*p targettype=*arg2";
+    *p = "*p attrname=*arg3";
+    *p = "*p attrval=*arg4";
+    *p = "*p attrunits=*arg5";
+    acLogAuditEvent(*ruleName, *p);
+  }
+}
+
+acAuditEvent(*ruleName, *target, *arg1, *arg2, *arg3) {
+  on (*ruleName == 'acPostProcForModifyAccessControl') {
+    *p = "target=*target";
+    *p = "*p targetuser=*arg1";
+    *p = "*p access=*arg2";
+    *p = "*p recursive=*arg3";
+    acLogAuditEvent(*ruleName, *p);
+  }
+}
+
+acAuditEvent(*ruleName, *target, *arg1, *arg2) {
+  on (*ruleName == 'acPostProcForFilePathReg') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1 srcpath=*arg2");
+  }
+}
+
+acAuditEvent(*ruleName, *target, *arg1) {
+  on (*ruleName == 'acPostProcForOpen') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForCreate') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForPut') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForCopy') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForRepl') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForDelete') {
+    acLogAuditEvent(*ruleName, "target=*target resource=*arg1");
+  }
+  on (*ruleName == 'acPostProcForObjRename') {
+    acLogAuditEvent(*ruleName, "target=*target newname=*arg1");
+  }
+}
+
+acAuditEvent(*ruleName, *target) {
+  acLogAuditEvent(*ruleName, "target=*target");
+}
+
+acLogAuditEvent(*ruleName, *params) {
+  msiGetSystemTime(*ts, "unix");
+  *u = $userNameClient++'#'++$rodsZoneClient
+  *argv = "*ruleName *ts *u *params"
+  if (errorcode(msiExecCmd("ids-event-logger", *argv, "null", "null", "null", *rc)) < 0) {
+    writeLine("serverLog", "ERROR: running ids-log-event");
+  }
+  else {
+    msiGetStdoutInExecCmdOut(*rc, *stdout);
+    if (*stdout like regex "^ERROR") {
+      writeLine("serverLog", "ERROR: running ids-log-event: "++*stdout);
+    }
+  }
+}
+
+# end auditing rules section
+
+# EOF

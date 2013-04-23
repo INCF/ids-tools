@@ -60,46 +60,48 @@ acCreateUserF1 {
 # These rules are the entry points for taking action
 # when something happens in iRODS (the 'post-action'
 # rules). One application is to generate audit events.
+# 
+# To turn on auditing, uncomment the rules below.
 #
-acPostProcForOpen {
-  acAuditEvent("acPostProcForOpen", $objPath, $rescName);
-}
-acPostProcForCreate {
-  acAuditEvent("acPostProcForCreate", $objPath, $rescName);
-}
-acPostProcForPut {
-  acAuditEvent("acPostProcForPut", $objPath, $rescName);
-}
-acPostProcForCopy {
-  acAuditEvent("acPostProcForCopy", $objPath, $rescName);
-}
-acPostProcForRepl {
-  acAuditEvent("acPostProcForRepl", $objPath, $rescName);
-}
-acPostProcForDelete {
-  acAuditEvent("acPostProcForDelete", $objPath, $rescName);
-}
-acPostProcForCollCreate {
-  acAuditEvent("acPostProcForCollCreate", $collName);
-}
-acPostProcForRmColl {
-  acAuditEvent("acPostProcForRmColl", $collName);
-}
-acPostProcForFilePathReg {
-  acAuditEvent("acPostProcForFilePathReg", $objPath, $rescName, $filePath);
-}
-acPostProcForObjRename(*sourceObject, *destObject) {
-  acAuditEvent("acPostProcForObjRename", *sourceObject, *destObject);
-}
-cPostProcForModifyAccessControl(*recursive, *access, *user, *zone, *path) {
-  acAuditEvent("acPostProcForModifyAccessControl", *path, *user++"#"++*zone, *access, *recursive);
-}
-acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v, *u) {
-  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, *u);
-}
-acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v) {
-  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, "");
-}
+#acPostProcForOpen {
+#  acAuditEvent("acPostProcForOpen", $objPath, $rescName);
+#}
+#acPostProcForCreate {
+#  acAuditEvent("acPostProcForCreate", $objPath, $rescName);
+#}
+#acPostProcForPut {
+#  acAuditEvent("acPostProcForPut", $objPath, $rescName);
+#}
+#acPostProcForCopy {
+#  acAuditEvent("acPostProcForCopy", $objPath, $rescName);
+#}
+#acPostProcForRepl {
+#  acAuditEvent("acPostProcForRepl", $objPath, $rescName);
+#}
+#acPostProcForDelete {
+#  acAuditEvent("acPostProcForDelete", $objPath, $rescName);
+#}
+#acPostProcForCollCreate {
+#  acAuditEvent("acPostProcForCollCreate", $collName);
+#}
+#acPostProcForRmColl {
+#  acAuditEvent("acPostProcForRmColl", $collName);
+#}
+#acPostProcForFilePathReg {
+#  acAuditEvent("acPostProcForFilePathReg", $objPath, $rescName, $filePath);
+#}
+#acPostProcForObjRename(*sourceObject, *destObject) {
+#  acAuditEvent("acPostProcForObjRename", *sourceObject, *destObject);
+#}
+#acPostProcForModifyAccessControl(*recursive, *access, *user, *zone, *path) {
+#  acAuditEvent("acPostProcForModifyAccessControl", *path, *user++"#"++*zone, *access, *recursive);
+#}
+#acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v, *u) {
+#  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, *u);
+#}
+#acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v) {
+#  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, "");
+#}
 
 #
 # Rules that are used to generate and log audit events.

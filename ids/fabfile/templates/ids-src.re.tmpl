@@ -56,9 +56,23 @@ acCreateUserF1 {
   }
 }
 
+# Don't let anybody set 'write' or 'own' permissions
+# for the 'anonymous' user or 'public' group. The 
+# resulting output on the client side is a bit "messy",
+# but there is no other way to do this AFAIK.
+#acPreProcForModifyAccessControl(*recursive, *access, *user, *zone, *path) {
+#  on (*user == "anonymous" || *user == "public") {
+#    if (*access == "write" || *access == "own") {
+#      cut;
+#      msiExit("1", "Can't set 'write' or 'own' for user *user");
+#      fail;
+#    }
+#  }
+#}
+
 #
 # These rules are the entry points for taking action
-# when something happens in iRODS (the 'post-action'
+# after something happens in iRODS (the 'post-action'
 # rules). One application is to generate audit events.
 # 
 # To turn on auditing, uncomment the rules below.
@@ -95,6 +109,17 @@ acCreateUserF1 {
 #}
 #acPostProcForModifyAccessControl(*recursive, *access, *user, *zone, *path) {
 #  acAuditEvent("acPostProcForModifyAccessControl", *path, *user++"#"++*zone, *access, *recursive);
+# add extra logic so that if somebody adds a permission (or 
+# removes it) for the 'public' group, then the 'anonymous' 
+# user is also given the same permission
+#  if (*user == "public") {
+#    if (*recursive == "1") {
+#      msiSetACL("recursive", *access, "anonymous#*zone", *path);
+#    }
+#    else {
+#      msiSetACL("default", *access, "anonymous#*zone", *path);
+#    }
+#  }
 #}
 #acPostProcForModifyAVUMetadata(*op, *type, *path, *a, *v, *u) {
 #  acAuditEvent("acPostProcForModifyAVUMetadata", *path, *op, *type, *a, *v, *u);

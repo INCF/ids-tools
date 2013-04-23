@@ -43,18 +43,25 @@ def get_server_info():
     env.remote_hostname = run('hostname')
     distribution = run('lsb_release -i')
     env.distribution = distribution.split(':')[1].strip('\t').lower()
+    if env.distribution == 'debian' or env.distribution == 'ubuntu':
+        env.distribution_family = 'debian'
+    else:
+        env.distribution_family = 'rhel'
     codename = run('lsb_release -c')
     env.codename = codename.split(':')[1].strip('\t')
+    release = run('lsb_release -r')
+    env.release = release.split(':')[1].strip('\t')
 
 
 @task
 def start_irods():
     # make sure it's set to start at boot
-    sed('/etc/default/irods',
+    if 'distribution_family' not in env or env.distribution_family == 'debian':
+        startup_config_file = '/etc/default/irods'
+    else:
+        startup_config_file = '/etc/sysconfig/irods'
+    sed(startup_config_file,
         'START_IRODS=no',
         'START_IRODS=yes',
         use_sudo=True)
     sudo('service irods start')
-
-    
-

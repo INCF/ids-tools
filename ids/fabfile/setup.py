@@ -9,8 +9,9 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 
 
 # where to download the irods packages from
+gpg_key_url = 'http://ids-us-east-1.s3.amazonaws.com/pubkey.gpg'
 apt_source_file = 'ids.list'
-apt_key_url = 'http://ids-us-east-1.s3.amazonaws.com/pubkey.gpg'
+yum_source_file = 'ids.repo'
 
 # misc variables ... you probably don't want to change these
 odbc_driver_file = '/usr/share/psqlodbc/odbcinst.ini.template'
@@ -23,13 +24,22 @@ env.templates = os.path.dirname(resource_filename('ids.fabfile.templates',
                                                   '__init__.py'))
 
 
-@task
+@task 
 def install_packages(is_icat=False):
+    # select between Debian style and RHEL style
+    if 'distribution_family' not in env or env.distribution_family == 'debian':
+        execute(install_packages_debian, is_icat)
+    else:
+        execute(install_packages_rhel, is_icat)
+
+        
+@task
+def install_packages_debian(is_icat=False):
     # set up the apt repo for irods packages
     upload_template(os.path.join(env.templates, apt_source_file + '.tmpl'),
                     '/etc/apt/sources.list.d/' + apt_source_file, 
                     context=env, use_sudo=True, mode=0644)
-    sudo('wget -O - %s | apt-key add -' % (apt_key_url,))
+    sudo('wget -O - %s | apt-key add -' % (gpg_key_url,))
     sudo('apt-get -qq update')
 
     # install required packages
@@ -39,14 +49,43 @@ def install_packages(is_icat=False):
 
 
 @task
+def install_packages_rhel(is_icat=False):
+    # set up the yum repo for the irods packages
+    upload_template(os.path.join(env.templates, yum_source_file + '.tmpl'),
+                    '/etc/yum.repos.d/' + yum_source_file, 
+                    context=env, use_sudo=True, mode=0644)
+    sudo('rpm --import %s' % (gpg_key_url,))
+    sudo('yum -q update')
+
+    # install the packages
+    if is_icat:
+        sudo('yum -q -y install postgresql-server postgresql-odbc cpp')
+        sudo('service postgresql initdb')
+        sudo('mv /var/lib/pgsql/data/pg_hba.conf /var/lib/pgsql/data/pg_hba.conf.orig')
+        pg_hba_tmpl = 'pg_hba.conf.%s.tmpl' % (env.distribution_family,)
+        upload_template(os.path.join(env.templates, pg_hba_tmpl),
+                        '/var/lib/pgsql/data/pg_hba.conf',
+                        context=env, use_sudo=True, mode=0600)
+        sudo('chown postgres:postgres /var/lib/pgsql/data/pg_hba.conf')
+        if exists('/sbin/restorecon'):
+            sudo('/sbin/restorecon /var/lib/pgsql/data/pg_hba.conf')
+        sudo('service postgresql start')
+    sudo('yum -q -y install irods-server')
+
+
+@task
 def create_icat_db():
     execute(create_tmpdir)
 
     # install Postgres's ODBC driver in the system /etc/odbcinst.ini
-    # sed part makes sure connection logging is turned off
-    sudo('rm -f /etc/odbcinst.ini')
-    sudo("cat %s | sed -e 's/^CommLog.*/CommLog\t= 0/' | odbcinst -i -d -r"
-         % (odbc_driver_file,))
+    # sed part makes sure connection logging is turned off (Debian-specific)
+    if 'distribution_family' not in env or env.distribution_family == 'debian':
+        sudo('rm -f /etc/odbcinst.ini')
+        sudo("cat %s | sed -e 's/^CommLog.*/CommLog\t= 0/' | odbcinst -i -d -r"
+             % (odbc_driver_file,))
+        env.odbc_driver = 'PostgreSQL Unicode'
+    else:
+        env.odbc_driver = 'PostgreSQL'
 
     # set up the ICAT database and user
     sudo('createuser -e -SDRl %s'
@@ -197,5 +236,3 @@ def clean_tmpdir():
     if 'tmpdir' in env and env.tmpdir:
         run('rm -rf %s' % (env.tmpdir,))
         del env['tmpdir']
-
-

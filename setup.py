@@ -8,7 +8,7 @@ from setuptools import setup
 version_py = os.path.join(os.path.dirname(__file__), "ids", '__init__.py')
 
 try:
-    version_git = subprocess.check_output(["git", "describe"]).rstrip()
+    version_git = subprocess.check_output(["git", "describe", "--always"]).rstrip()
 except:
     with open(version_py, 'r') as fh:
         version_git = open(version_py).read().strip().split('=')[-1].replace('"','')
@@ -18,7 +18,7 @@ with open(version_py, 'w') as fh:
     fh.write(version_msg + os.linesep + "__version__=" + version_git)
 
 
-setup(name = "ids-tools",
+setup(name = "incf.ids-tools",
       version = "{ver}".format(ver=version_git),
       description = "INCF Dataspace tools",
       long_description = open("README.rst").read(),

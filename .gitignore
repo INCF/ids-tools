@@ -1,4 +1,4 @@
 *.pyc
-ids_tools.egg-info
+*.egg-info
 build/
 dist/

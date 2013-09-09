@@ -25,9 +25,7 @@ Quickstart
 After registering an account at `INCF Dataspace`_ you might want to
 install ids-tools package:
 
-``
-pip install incf.ids-tools
-``
+``pip install incf.ids-tools``
 
 If you are familiar with iRODS, that would be enough to get you started.
 Otherwise, please refer to our in-depth tutorial in the `github wiki`_.

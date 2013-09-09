@@ -2,7 +2,9 @@
 INCF Dataspace tools
 ####################
 
-.. stillmaintained:: https://stillmaintained.com/INCF/ids-tools.png
+|stillmaintained|_
+
+.. |stillmaintained| image:: https://stillmaintained.com/INCF/ids-tools.png
 
 ************
 Introduction
@@ -34,5 +36,6 @@ Otherwise, please refer to our in-depth tutorial in the `github wiki`_.
 .. _INCF Dataspace: http://dataspace.incf.org
 .. _INCF website: http://incf.org
 .. _github wiki: https://github.com/INCF/ids-tools/wiki
+.. _stillmaintained: https://stillmaintained.com/INCF/ids-tools.png
 
 Copyright (c) 2013 Distributed Bio LLC. All rights reserved.

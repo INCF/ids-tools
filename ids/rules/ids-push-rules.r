@@ -1,6 +1,6 @@
 idsPushRules {
   *ContInxOld = 1;
-  msiMakeGenQuery("RESC_LOC", "RESC_LOC != 'localhost'", *GenQInp);
+  msiMakeGenQuery("RESC_LOC", "RESC_LOC != 'localhost' and RESC_STATUS != 'down'", *GenQInp);
   msiExecGenQuery(*GenQInp, *GenQOut);
   msiGetContInxFromGenQueryOut(*GenQOut, *ContInxNew);
   while (*ContInxOld > 0) {

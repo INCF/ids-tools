@@ -5,7 +5,8 @@ well as functions for retrieving lists of users and groups
 from both iRODS and LDAP that conform to IDS naming policies.
 """
 
-from ids.utils import run_iquest, run_iadmin, get_local_zone
+from ids.utils import run_iquest, run_iadmin
+from ids.zones import get_local_zone
 
 
 

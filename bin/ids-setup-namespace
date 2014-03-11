@@ -6,7 +6,8 @@ import os
 import argparse
 
 from ids.users import get_irods_group, irods_user_exists
-from ids.utils import run_iquest, get_local_zone
+from ids.utils import run_iquest
+from ids.zones import get_local_zone
 from ids.namespace import irods_mkdir, irods_setacls, irods_coll_exists, irods_coll_getacls
 
 

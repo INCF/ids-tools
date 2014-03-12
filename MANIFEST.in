@@ -1,3 +1,4 @@
 include README.rst
+include version.py
 include ids/rules/*.r
 include ids/fabfile/templates/*.tmpl

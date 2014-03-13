@@ -41,3 +41,52 @@ def get_zone_list(verbose=False):
         return None
 
     return [zone.rstrip('\n') for zone in output.splitlines()]
+
+
+def get_zone_details(zone_name=None, verbose=False):
+    """
+    This function will retrieve the details of all
+    the zones defined within the IDS. If zone_name
+    is provided, only the details for that zone will
+    be returned.
+
+    Returns a dict of dicts, where the key of the top-level
+    dict is the zone name, and the sub-dict contains the
+    zone details including: type, endpoint, comment,
+    and creation and modification timestamps. Will return
+    None if some error occurred.
+    """
+
+    sep = '~_~'
+    query_fields = [
+        'ZONE_NAME',
+        'ZONE_TYPE',
+        'ZONE_CONNECTION',
+        'ZONE_COMMENT',
+        'ZONE_CREATE_TIME',
+        'ZONE_MODIFY_TIME',
+        ]
+    query_format = sep.join(['%s'] * len(query_fields))
+
+    query = 'select %s' % (','.join(query_fields))
+    if zone_name:
+        query = query + " where ZONE_NAME = '%s'" % (zone_name,)
+
+    output = run_iquest(query, format=query_format, verbose=verbose)
+    if output is None:
+        return None
+
+    zones = []
+    for line in output.splitlines():
+        fields = line.split(sep)
+        zone = {
+            'name': fields[0],
+            'type': fields[1],
+            'connection': fields[2],
+            'comment': fields[3],
+            'create_time': fields[4],
+            'modification_time': fields[5],
+            }
+        zones.append(zone)
+
+    return zones

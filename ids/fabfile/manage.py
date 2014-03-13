@@ -42,11 +42,15 @@ def remove_resource():
 def get_server_info():
     env.remote_hostname = run('hostname')
     distribution = run('lsb_release -i')
-    env.distribution = distribution.split(':')[1].strip('\t').lower()
-    if env.distribution == 'debian' or env.distribution == 'ubuntu':
+    env.distribution = distribution.split(':')[1].strip('\t')
+    if env.distribution == 'Debian' or env.distribution == 'Ubuntu':
         env.distribution_family = 'debian'
     else:
         env.distribution_family = 'rhel'
+        if env.distribution == 'CentOS':
+            env.distribution_flavor = 'CentOS'
+        else:
+            env.distribution_flavor = 'RHEL'
     codename = run('lsb_release -c')
     env.codename = codename.split(':')[1].strip('\t')
     release = run('lsb_release -r')

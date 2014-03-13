@@ -12,6 +12,7 @@ from fabric.contrib.files import upload_template, sed, uncomment, exists
 gpg_key_url = 'http://ids-us-east-1.s3.amazonaws.com/pubkey.gpg'
 apt_source_file = 'ids.list'
 yum_source_file = 'ids.repo'
+ppa_name = 'ppa:cansmith/irods'
 
 # misc variables ... you probably don't want to change these
 odbc_driver_file = '/usr/share/psqlodbc/odbcinst.ini.template'
@@ -35,11 +36,16 @@ def install_packages(is_icat=False):
         
 @task
 def install_packages_debian(is_icat=False):
-    # set up the apt repo for irods packages
-    upload_template(os.path.join(env.templates, apt_source_file + '.tmpl'),
-                    '/etc/apt/sources.list.d/' + apt_source_file, 
-                    context=env, use_sudo=True, mode=0644)
-    sudo('wget -O - %s | apt-key add -' % (gpg_key_url,))
+    # set up the apt repo for irods packages, using the PPA for
+    # Ubuntu and manually for Debian
+    if 'distribution' in env and env.distribution == 'Ubuntu':
+        sudo('apt-get -qq -y install python-software-properties')
+        sudo('apt-add-repository -y %s' % (ppa_name,)
+    else:
+        upload_template(os.path.join(env.templates, apt_source_file + '.tmpl'),
+                        '/etc/apt/sources.list.d/' + apt_source_file,
+                        context=env, use_sudo=True, mode=0644)
+        sudo('wget -O - %s | apt-key add -' % (gpg_key_url,))
     sudo('apt-get -qq update')
 
     # install required packages

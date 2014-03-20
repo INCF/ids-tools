@@ -40,7 +40,7 @@ def install_packages_debian(is_icat=False):
     # Ubuntu and manually for Debian
     if 'distribution' in env and env.distribution == 'Ubuntu':
         sudo('apt-get -qq -y install python-software-properties')
-        sudo('apt-add-repository -y %s' % (ppa_name,)
+        sudo('apt-add-repository -y %s' % (ppa_name,))
     else:
         upload_template(os.path.join(env.templates, apt_source_file + '.tmpl'),
                         '/etc/apt/sources.list.d/' + apt_source_file,

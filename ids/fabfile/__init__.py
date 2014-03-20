@@ -1,9 +1,20 @@
+import os
+
 from fabric.api import env, task, execute
 
 import setup
 import manage
 
 env.use_ssh_config = True
+
+# Fabric needs ~/.ssh/config to exist (even if empty) when
+# use_ssh_config is set, so make sure it exists
+dot_ssh = os.path.join(os.environ.get('HOME', ''), '.ssh')
+if not os.path.isdir(dot_ssh):
+    os.mkdir(dot_ssh, 0700)
+ssh_config = os.path.join(dot_ssh, 'config')
+if not os.path.isfile(ssh_config):
+    open(ssh_config, 'a').close()
 
 @task
 def setup_ds():

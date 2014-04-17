@@ -51,7 +51,11 @@ def run_iquest(query, format=None, zone=None, verbose=False):
     command.append(query)
 
     (rc, output) = shell_command(command)
-    if rc != 0 and not 'CAT_NO_ROWS_FOUND' in output[1]:
+
+    if 'CAT_NO_ROWS_FOUND' in output[0] or 'CAT_NO_ROWS_FOUND' in output[1]:
+        return ""
+
+    if rc != 0:
         if verbose:
             print('Error running %s, rc = %d'
                   % (' '.join(command), rc))

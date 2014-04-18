@@ -3,8 +3,9 @@ Utility functions for dealing with zones within the IDS.
 Includes functions for retrieving zone information as
 well as functions for creating and deleting zones.
 """
+import os
 
-from ids.utils import run_iquest, run_iadmin
+from ids.utils import run_iquest, run_iadmin, shell_command
 
 
 
@@ -154,3 +155,49 @@ def remove_zone(zone_name):
         return 0
 
     return run_iadmin('rmzone', [zone_name,])
+
+
+
+def check_zone_endpoint(zone_name, endpoint):
+    """
+    This function will check if the iRODS service is
+    available at the provided endpoint, and if the zone
+    name is accurate.
+
+    Returns a tuple with the first element being True if
+    the check was successful (and None in the second element),
+    or False with a string reason as the second tuple element.
+    """
+
+    if not zone_name or not endpoint:
+        return (False, 'zone_name and endpoint must be specified')
+
+    if endpoint.count(':') != 1:
+        return (False, 'malformed endpoint. Should be host:port')
+
+    host, port = endpoint.split(':')
+
+    env_dict = dict(os.environ)
+    env_dict['irodsHost'] = host
+    env_dict['irodsPort'] = port
+
+    (rc, output) = shell_command(['imiscsvrinfo',], environment=env_dict)
+    if rc:
+        if 'USER_SOCK_CONNECT_ERR' in output[1]:
+            reason = 'connection refused on port %s' % port
+        elif 'USER_RODS_HOSTNAME_ERR' in output[1]:
+            reason = 'could not resolve hostname %s' % host
+        else:
+            reason = 'error running imiscsvrinfo'
+        return (False, reason)
+
+    for line in output[0].splitlines():
+        if line.startswith('rodsZone='):
+            k, v = line.split('=')
+            if v == zone_name:
+                return (True, None)
+            else:
+                return (False, 'zone name %s did not match remote zone %s' % (zone_name, v))
+
+    # could connect to server, but zone name didn't match
+    return (False, 'could not determine remote zone name')

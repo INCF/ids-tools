@@ -5,7 +5,10 @@ well as functions for retrieving lists of users and groups
 from both iRODS and LDAP that conform to IDS naming policies.
 """
 
-from ids.utils import run_iquest, run_iadmin
+import tempfile
+import os
+
+from ids.utils import run_iquest, run_iadmin, shell_command
 from ids.zones import get_local_zone
 
 
@@ -374,3 +377,32 @@ def get_irods_group(groupname, verbose=False):
         return None
 
     return output.splitlines()
+
+
+
+def auth_irods_user(user, password, scheme='PAM'):
+    """
+    Attempts to authenticate the given user in the local zone
+    using the iinit command and the desired scheme (with the
+    default being PAM authentication).
+
+    Returns True if the user was successfully authenticated,
+    False if the authentication failed.
+    """
+    if not user or not password:
+        return False
+
+    # create an environment to pass to iinit
+    env_dict = dict(os.environ)
+    env_dict['irodsUserName'] = user
+    env_dict['irodsAuthScheme'] = scheme
+    auth_file = tempfile.mkstemp()
+    os.close(auth_file[0])
+    env_dict['irodsAuthFileName'] = auth_file[1]
+
+    (rc, output) = shell_command(['iinit', password], environment=env_dict)
+    os.unlink(auth_file[1])
+    if rc:
+        return False
+    else:
+        return True

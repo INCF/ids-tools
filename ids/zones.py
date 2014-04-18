@@ -50,9 +50,9 @@ def get_zone_details(zone_name=None, verbose=False):
     is provided, only the details for that zone will
     be returned.
 
-    Returns a dict of dicts, where the key of the top-level
-    dict is the zone name, and the sub-dict contains the
-    zone details including: type, endpoint, comment,
+    Returns a array of dicts with each array element
+    representing a zone, and the dict contains the
+    zone details including: name, type, endpoint, comment,
     and creation and modification timestamps. Will return
     None if some error occurred.
     """
@@ -80,7 +80,7 @@ def get_zone_details(zone_name=None, verbose=False):
     for line in output.splitlines():
         fields = line.split(sep)
         zone = {
-            'name': fields[0],
+            'zone_name': fields[0],
             'type': fields[1],
             'connection': fields[2],
             'comment': fields[3],
@@ -90,3 +90,67 @@ def get_zone_details(zone_name=None, verbose=False):
         zones.append(zone)
 
     return zones
+
+
+def make_zone(zone_name, endpoint, comment=None):
+    """
+    This function calls iadmin mkzone to create a new
+    remote zone definition. The endpoint is of the
+    form hostname:port.
+
+    On success make_zone will return a dict representing
+    the new zone details. On failure, None will be returned.
+    """
+
+    if not zone_name or not endpoint:
+        return None
+
+    # TODO: validity check endpoint
+    mkzone_args = [ zone_name, 'remote', endpoint ]
+    if comment:
+        mkzone_args.append(comment)
+    if run_iadmin('mkzone', mkzone_args):
+        return None
+
+    newzone = get_zone_details(zone_name)
+
+    return newzone[0]
+
+
+
+def modify_zone(zone_name, endpoint=None, comment=None):
+    """
+    This function calls iadmin modzone to update a
+    remote zone definition (endpoint or comment). The
+    endpoint is of the form hostname:port. At this
+    time, mod_zone will not support changing the zone name.
+
+    On success mod_zone will return a dict representing
+    the new zone details. On failure, None will be returned.
+    """
+
+    if not zone_name:
+        return None
+
+    if comment and run_iadmin('modzone', [zone_name, 'comment', comment]):
+        return None
+
+    if endpoint and run_iadmin('modzone', [zone_name, 'conn', endpoint]):
+        return None
+
+    zone = get_zone_details(zone_name)
+
+    return zone[0]
+
+
+
+def remove_zone(zone_name):
+    """
+    This function will remove a zone definition from icat.
+
+    Returns 0 on success and -1 on error.
+    """
+    if not zone_name:
+        return 0
+
+    return run_iadmin('rmzone', [zone_name,])

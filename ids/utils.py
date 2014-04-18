@@ -6,11 +6,13 @@ import subprocess
 
 
 
-def shell_command(command_list):
+def shell_command(command_list, environment=None):
     """
     Performs a shell command using the subprocess object
     
     input list of strings that represent the argv of the process to create
+    and optionally the environment to run within
+
     return tuple (return code, the output object from subprocess.communicate)
     """
 
@@ -19,7 +21,7 @@ def shell_command(command_list):
         
     try:
         process = subprocess.Popen(command_list, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+                                   stderr=subprocess.PIPE, env=environment)
         output = process.communicate()
         return (process.returncode, output)
     except:

@@ -3,6 +3,7 @@ Some helpful functions for the other IDS modules and utilities
 """
 
 import subprocess
+import re
 
 
 
@@ -93,3 +94,28 @@ def run_iadmin(command, arglist, verbose=False):
         return -1
 
     return 0
+
+
+def get_irods_environment(verbose=False):
+    """
+    runs the ienv command to extract iRODS environment
+    settings set either in $HOME/.irods/.irodsEnv or
+    in the calling user's environment.
+    """
+
+    ienv = dict()
+
+    (rc, output) = shell_command(['ienv',])
+    if rc != 0:
+        if verbose:
+            print('Error running ienv, rc = %d' % rc)
+            print output[1]
+        return ienv
+
+    var_regex = re.compile('^.* (irods.+)=(.+)$')
+    for line in output[0].splitlines():
+        matches = var_regex.match(line)
+        if matches:
+            ienv[matches.group(1)] = matches.group(2)
+
+    return ienv

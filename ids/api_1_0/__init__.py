@@ -2,7 +2,7 @@ from flask import Flask
 from flask.ext.restful import reqparse, abort, Api, Resource, fields, marshal
 from flask.ext.httpauth import HTTPBasicAuth
 
-from ids.zones import get_zone_details, make_zone, modify_zone, remove_zone
+from ids.zones import get_zone_details, make_zone, modify_zone, remove_zone, check_zone_endpoint
 from ids.users import auth_irods_user
 
 service = Flask(__name__)

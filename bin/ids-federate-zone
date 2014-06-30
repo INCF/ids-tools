@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+# -*- python -*-
+
+import os
+import sys
+import argparse
+import getpass
+import requests
+import socket
+
+from ids.zones import get_local_zone, get_zone_details, make_zone, remove_zone
+from ids.utils import get_irods_environment
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='add the local zone to the IDS federation')
+    parser.add_argument('--incfuser',
+                        help='INCF username')
+    parser.add_argument('--incfpass',
+                        help='INCF password')
+    parser.add_argument('--service-uri', default='https://ids.incf.net/api/v1.0',
+                        help=('the base URI of the IDS federation service. Normally '
+                              'this should not be changed from the default.'))
+    parser.add_argument('--ids-zone', default='incf',
+                        help=('the name of the INCF zone. Should not normally be '
+                              'changed from the default.'))
+    parser.add_argument('--ids-endpoint', default='ids.incf.net:1247',
+                        help=('the fqdn:port of the ICAT for the INCF zone. Should '
+                              'not normally be changed from the default.'))
+    parser.add_argument('--add', '--update', action='store_false', dest='remove', default=False,
+                        help='Add or update a zone definition in the IDS federation.')
+    parser.add_argument('--remove', action='store_true', dest='remove',
+                        help='Remove a zone definition from the IDS federation.')
+    parser.add_argument('--icat-endpoint', '-i',
+                        help=('the host:port of the local ICAT server. This host name '
+                              'must be DNS resolvable to an IP that can reach this '
+                              'host even from outside your organization\'s firewall.'))
+    parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                        help='print extra progress messages')
+    args = parser.parse_args()
+
+
+    num_tries = 0
+    while not args.incfuser:
+        if num_tries >= 2:
+            sys.exit(1)
+        args.incfuser = raw_input('Enter your INCF username: ')
+        if not args.incfuser:
+            print('You must provide your INCF username to authenticate to federation services')
+        num_tries += 1
+
+    num_tries = 0
+    while not args.incfpass:
+        if num_tries >= 3:
+            sys.exit(1)
+        tmp_pass1 = getpass.getpass('Enter your INCF password: ')
+        if not tmp_pass1:
+            print('Empty passwords are not allowed')
+        else:
+            tmp_pass2 = getpass.getpass('Enter your password again for verification: ')
+            if not tmp_pass2 or tmp_pass1 != tmp_pass2:
+                print("Passwords don't match.")
+            else:
+                args.incfpass = tmp_pass1
+        num_tries += 1
+
+    auth_info = (args.incfuser, args.incfpass)
+
+    my_zone = get_local_zone(verbose=args.verbose)
+    if not my_zone:
+        print('Could not retrieve local zone name.')
+        sys.exit(1)
+    my_zone_uri = os.path.join(args.service_uri, 'zone', my_zone)
+
+
+    # process a zone removal first
+    if args.remove:
+        print('Requesting zone %s to be removed from the IDS federation...' % my_zone)
+        resp = requests.delete(my_zone_uri, auth=auth_info)
+        if not resp.ok:
+            print('%s' % resp.json()['message'])
+            sys.exit(1)
+        print('Zone %s successfully removed.' % my_zone)
+
+        print("Removing '%s' zone from local ICAT..." % args.ids_zone)
+        if remove_zone(args.ids_zone) != 0:
+            print('Error removing the INCF zone')
+            sys.exit(1)
+        else:
+            print('All done.')
+            sys.exit(0)
+
+
+    # add or update ... same operation, but might fail in different ways
+
+    # find the ICAT server endpoint for this zone if not provided
+    if not args.icat_endpoint:
+        # use the local zone server as the icat address
+        ienv = get_irods_environment()
+        icat_host = socket.getfqdn(ienv.get('irodsHost', 'localhost'))
+        icat_port = ienv.get('irodsPort', '1247')
+        args.icat_endpoint = '%s:%s' % (icat_host, icat_port)
+
+    print('Requesting zone %s to be added to the IDS federation with endpoint %s...'
+          % (my_zone, args.icat_endpoint))
+    resp = requests.put(my_zone_uri, {'endpoint': args.icat_endpoint}, auth=auth_info)
+    if not resp.ok:
+        print('%s' % resp.json()['message'])
+        sys.exit(1)
+    print('Zone %s successfully added/updated.' % my_zone)
+
+    # now add the INCF zone if it does not already exist
+    if get_zone_details(args.ids_zone):
+        print("Zone '%s' already defined. All done." % args.ids_zone)
+        sys.exit(0)
+    print("Add zone '%s' to the local ICAT." % args.ids_zone)
+    if not make_zone(args.ids_zone, args.ids_endpoint):
+        print("Couldn't add the '%s' zone in the local environment" % args.ids_zone)
+        sys.exit(1)
+
+    print("All done.")
+    sys.exit(0)

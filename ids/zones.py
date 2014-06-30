@@ -183,8 +183,15 @@ def check_zone_endpoint(zone_name, endpoint):
 
     (rc, output) = shell_command(['imiscsvrinfo',], environment=env_dict)
     if rc:
-        if 'USER_SOCK_CONNECT_ERR' in output[1]:
-            reason = 'connection refused on port %s' % port
+        if ('SYS_PACK_INSTRUCT_FORMAT_ERR' in output[1]
+            or 'SYS_SOCK_READ_TIMEDOUT' in output[1]
+            or 'SYS_HEADER_READ_LEN_ERR' in output[1]):
+            reason = 'a service other than iRODS is running on port %s' % port
+        elif 'USER_SOCK_CONNECT_ERR' in output[1]:
+            if 'Connection timed out' in output[1]:
+                reason = 'timed out connecting to port %s. Is there a firewall in place?' % port
+            else:
+                reason = 'no service is running on port %s' % port
         elif 'USER_RODS_HOSTNAME_ERR' in output[1]:
             reason = 'could not resolve hostname %s' % host
         else:

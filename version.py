@@ -104,7 +104,7 @@ def pep440adapt(version):
         parts = version.split('-')
         parts[-2] = 'dev' + parts[-2]
         version = '.'.join(parts[:-1])
-        return version
+    return version
 
 
 if __name__ == "__main__":

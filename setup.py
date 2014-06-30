@@ -16,6 +16,7 @@ setup(name = "incf.ids-tools",
             "bin/ids-copy-dataset",
             "bin/ids-event-logger",
             "bin/ids-init",
+            "bin/ids-federate-zone",
             "bin/ids-manage-resource",
             "bin/ids-search-meta",
             "bin/ids-setup-data-server",
@@ -25,10 +26,12 @@ setup(name = "incf.ids-tools",
             "bin/ids-sync-peer-zones",
             "bin/ids-sync-users",
             "bin/ids-sync-zone-rules"
+            "bin/ids-zone-api"
             ],
       url = "https://github.com/INCF/ids-tools/",
       packages = [
             "ids",
+            "ids.api_1_0",
             "ids.rules",
             "ids.fabfile",
             "ids.fabfile.templates"
@@ -40,7 +43,8 @@ setup(name = "incf.ids-tools",
       include_package_data = True,
       install_requires = [
             "argparse",
-            "Fabric"
+            "Fabric",
+            "requests"
             ],
       license = "ASL",
       platforms = "Posix; MacOS X",

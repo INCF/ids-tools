@@ -97,7 +97,9 @@ def make_zone(zone_name, endpoint, comment=None):
     """
     This function calls iadmin mkzone to create a new
     remote zone definition. The endpoint is of the
-    form hostname:port.
+    form hostname:port. It will also make sure that the
+    zone path /zone_name is readable by the public
+    group and (if it's configured) the anonymous user.
 
     On success make_zone will return a dict representing
     the new zone details. On failure, None will be returned.
@@ -106,12 +108,17 @@ def make_zone(zone_name, endpoint, comment=None):
     if not zone_name or not endpoint:
         return None
 
-    # TODO: validity check endpoint
     mkzone_args = [ zone_name, 'remote', endpoint ]
     if comment:
         mkzone_args.append(comment)
     if run_iadmin('mkzone', mkzone_args):
         return None
+
+    # add the zone read ACLs.
+    if run_iadmin('modzonecollacl', ['read', 'public', '/%s' % zone_name]):
+        print('could not add "read" permission to "public" on zone %s' % zone_name)
+    # ignore an error for the anonymous user, as this user is only optionally defined
+    run_iadmin('modzonecollacl', ['read', 'anonymous', '/%s' % zone_name])
 
     newzone = get_zone_details(zone_name)
 
